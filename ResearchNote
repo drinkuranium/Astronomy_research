@@ -58,5 +58,16 @@ autoconf, automake는 make check, make installcheck에서 오류 발생
   t/print-libdir.sh
 
 GalIC 실행 성공 
- - Test with Particle number of Bulge, Halo = 10000, respectively
- - Test with Particle number of Bulge, Halo = 100000, respectively
+ - Test with Particle number of Bulge, Halo = 10000, respectively (Model_B1.param)
+ - Test with Particle number of Bulge, Halo = 100000, respectively (Model_B1.param)
+ - Test with Particle number of Bulge, Disk = 20000, respectively (Model_D1.param)
+  -> Failed, running out of memory. It seems like D1 model needs much more memory
+  -> Succeeded by reducing sampling particles for density and force fields by factor 10
+     (Particle number in target model is not the main cause of exhaustion of memory)
+	 (But reducing particle number greatly reduces running time)
+	 (Also note that MaxMemSize in parameterfile means maximum RAM allocated 'per core')
+
+Gizmo User's Guide 공부 
+ - section 7: Config.sh (Setting compile-time options) 
+              Additional Fluid Physics 부터 ~ On-the-Fly Group (Halo, Galaxy, Cluster, etc) Finding 까지
+	
