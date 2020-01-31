@@ -1,0 +1,62 @@
+---------------------------------2020. 01. 28----------------------------------
+
+인턴 시작, 김웅태 교수님 및 서우영 박사님과 면담
+
+---------------------------------2020. 01. 29----------------------------------
+
+Gizmo 실행 시도
+
+---------------------------------2020. 01. 30----------------------------------
+
+Gizmo 실행 성공
+
+Gizmo test problem 3번 실시
+1. Kelvin-Helmholtz instability simulation
+2. Galactic disk with no ISM physics
+3. Galactic disk with ISM cooling (only to 10000K)
+ - Config.sh에서 Cooling을 키는 경우 TREECOOL 위치를 GIZMO binary가 있는 
+   위치로 바꿔주어야 함
+ - Cooling physics의 영향 때문인지 timestep이 매우 작음
+  -> 시뮬레이션을 끝까지 돌리는 것은 불가능
+
+Gizmo User's Guide 공부 
+ - section 9: Snapshot & Initical Condition Files 완독
+ - section 10: Log Outputs & Diagnostic Files 완
+ - section 7: Config.sh (Setting compile-time options) ~ Hydro Solver Method 까지
+
+---------------------------------2020. 01. 31----------------------------------
+
+GalIC 실행 시도
+- 구조와 대부분의 dependency는 Gizmo와 비슷
+- Gizmo와 마찬가지로 Makefile에 dependent library의 경로를 지정해주어야 함
+- Gizmo와 마찬가지로 Config.sh로 complie time, parameterfile로 runtime 조절
+- Gizmo와는 다르게 GMP library 필요 (Makefile에서 확인 가능)
+ -> GMU library를 깔기 위해 M4 library 설치
+ -> 설치 도중 autoconf, automake library도 같이 설치
+- Makefile에서 GMU library의 위치를 따로 잡아주지 않았는데 알아서 인식 - ??
+
+autoconf, automake는 make check, make installcheck에서 오류 발생
+-> 몇 천개의 테스트 중 10개 정도의 오류만 났으나, 어떤 영향이 있을지는 미지수
+-- 실패한 테스트 메모 --
+ autoconf - make check: 2/488 Failed
+  501: Libtool (Compatibility with other tools)
+  503: autoscan (Autoscan)
+ autoconf - make installcheck : All succeeded
+ automake - make check: 9/2897 Failed (XFAIL: 38, SKIP: 140)
+  t/nobase-python.sh
+  t/py-compile-basic.sh
+  t/py-compile-basedir.sh
+  t/py-compile-destdir.sh
+  t/py-compile-option-terminate.sh
+  t/python3.sh
+  t/python10.sh
+  t/python12.sh
+  t/subobj.sh
+ automake - make checkinstall: 3/2697 Failed (XFAIL: 38, SKIP: 216)
+  t/aclocal-print-acdir.sh
+  t/location.sh
+  t/print-libdir.sh
+
+GalIC 실행 성공 
+ - Test with Particle number of Bulge, Halo = 10000, respectively
+ - Test with Particle number of Bulge, Halo = 100000, respectively
