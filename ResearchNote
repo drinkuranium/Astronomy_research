@@ -71,3 +71,29 @@ Gizmo User's Guide 공부
  - section 7: Config.sh (Setting compile-time options) 
               Additional Fluid Physics 부터 ~ On-the-Fly Group (Halo, Galaxy, Cluster, etc) Finding 까지
 	
+------------------------2020. 02. 01 ~ 2020. 02. 02 주말-----------------------
+
+Gizmo User's Guide 공부 
+ - section 7: Config.sh (Setting compile-time options) 
+              On-the-Fly Group (Halo, Galaxy, Cluster, etc) Finding 살짝 
+
+---------------------------------2020. 02. 03----------------------------------
+
+GalIC GNU optimization option 노트북에 최적화 (by using B1 model)
+ - -O3보다 -O2가 오히려 빠르고, -funroll-loops는 큰 차이가 없는 것을 확인
+ - Particle number를 늘리면 -funroll-loops는 실행 속도를 더 느리게 만들 것으로 추측
+  -> -O2 option만 주는 것이 가장 빠름
+
+GalIC -np로 할당하는 코어 수에 따른 속도 측정 (by using D2 model)
+ - 코어 늘어날수록 실행속도도 빨라짐
+ - 다만 그 정도는 생각보다 훨씬 작음
+  (4->8->12로 4개씩 늘어날 때마다 약 15% 정도 빨라짐)
+ - 8->12의 차이와 4->8의 차이가 비슷함 -> Hyper-threading의 영향은 아닌 듯
+
+Gizmo의 결과로 나오는 HDF5 데이터 읽는 코드 해석
+(readsnap.py & load_from_snapshot)
+ - 전체 구조는 학습했으나, 물리적인 이유는 앞으로 공부가 계속 필요함
+
+GalIC test model의 결과를 load_from_snapshot을 통해 plot
+ - 현재는 particle location만 plot했음
+ - Velocity ellpisoid plot 등 데이터를 가공하기 위해서는 더 많은 작업이 필요할 듯
