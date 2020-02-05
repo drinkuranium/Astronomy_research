@@ -1,0 +1,158 @@
+GIZMO, GalIC 코드를 돌리기 위한 library와 경로 설정 방법
+
+-----------------------------GIZMO setup------------------------------
+mpich 설치 - sudo apt install mpich
+
+Gizmo user's guide에서 gsl, fftw-3, HDF1-10 다운
+
+mpich installation
+sudo apt install mpich
+
+gsl installation
+gsl-x.y.tar.gz 압축해제 후 터미널로 압축해제한 디렉토리 들어가기
+./configure
+make
+make check
+sudo make install
+sudo make installcheck
+(기본 경로는 /usr/local)
+
+fftw-3 installation
+fftw-3.x.y.tar.gz 압축해제 후 터미널로 압축해제한 디렉토리 들어가기
+./configure --enable-mpi
+make
+make check
+sudo make install
+sudo make installcheck
+(기본 경로는 /usr/local)
+
+HDF5 installation
+
+먼저 zlib 설치 (HDF5는 zlib dependent)
+zlib-x.y 압출해제 후 터미널로 압축해제한 디렉토리 들어가기
+./configure
+make
+make check
+sudo make install
+(기본 경로는 /usr/local)
+(/etc/ld.so.conf에서 프로그램들이 library 파일, 정확히는 so 파일을
+찾는 경로를 지정해준다. /etc/ld.so.conf의 내용은 다음 한 줄인데:
+include /etc/ld.so.conf.d/*.conf
+즉 ld.so.conf.d 폴더 안의 .conf 확장자 파일을 모두 읽는다고 한다.
+ld.so.conf.d 폴더 안의 파일을 확인하면, 그 중 libc.conf 파일이 
+/usr/local/lib를 지정해준다. 따라서 zlib를 /usr/local에 설치한다면
+HDF5가 zlib를 인식할 것이므로, 따로 설정이 필요하지는 않다.)
+
+이제 본격적인 HDF5 설치
+HDF5-1.10.z.tar.gz 압축해제 후 터미널로 압축해제한 디렉토리 들어가기
+./configure --prefix=/usr/local
+make
+make check
+sudo make install
+sudo make check-install
+(기본 경로가 현재 터미널의 폴더이기 때문에 prefix=/usr/local 지정)
+-> Dependent library 설치 완료
+
+GIZMO installation (git 필요, 없는 경우 sudo apt install git)
+GIZMO code 홈페이지에서 Important link 세션의 gizmo-public을 클릭
+-> bitbucket 사이트로 들어가지면 우상단의 clone 클릭
+-> git clone https://bitbucket.org/phopkins/gizmo-public.git 복사
+-> 터미널로  설치하고자 하는 디렉토리에 가서 위 명령어 붙여넣으면 설치됨
+   (github 사용법과 같음)
+-> 혹시 모를 원격 저장소 오염을 방지하기 위해 원격 저장소 제거
+   (gizmo-public 폴더로 들어가서 git remote remove origin)
+
+이제 GIZMO에 dependent library 경로를 설정해주고, 알맞은 설정 선택 필요
+Makefile에 들어가서 다음과 같이 personal laptop 설정 추가
+(다른 systype들이 지정된 위치에 추가해야함)
+#----------------------------------------------------------------------------------------------
+ifeq ($(SYSTYPE),"Ubuntu")
+CC       =  mpicc
+CXX      =  mpiCC
+FC       =  $(CC) #mpifort
+OPTIMIZE = -O2 -funroll-loops
+OPTIMIZE += -g -Wall # compiler warnings
+GSL_INCL = -I/usr/local/include
+GSL_LIBS = -L/usr/local/lib
+FFTW_INCL= -I/usr/local/include
+FFTW_LIBS= -L/usr/local/lib
+HDF5INCL = -I/usr/local/hdf5/include -DH5_USE_16_API
+HDF5LIB  = -L/usr/local/hdf5/lib -lhdf5
+MPICHLIB = #
+OPT     += #
+endif
+
+CC는 mpi C compiler, CXX는 mpi c++ compiler로 찾아보고 맞는 것으로 추가
+FC는 아직 잘 모르겠다..
+Optimize는 gcc optimize option, 내 컴퓨터 기준으로 -O2만 주는 것이 최적
+(funroll-loops는 오히려 더 느려짐)YSTYPE="Frontera"
+GSL, FFTW, HDF, MPI 구문들은 library 위치 지정
+(-I, -L 옵션은 linker에게 다음에 오는 주소들이 
+각각 header file과 library file을 찾는 위치를 지정해준다는 것을 알려줌)
+HDF5-1.6의 버전을 쓰는 경우에는 -DH5_USE_16_API, -lhdf5는 필요없으나
+HDF5-1.8, 1.10을 쓰는 경우 -DH5_USE_16_API, -lhdf5 옵션 필요
+HDF5-1.8을 쓰는 경우 -lhdf5 뒤에 -lz 옵션도 필요 (1.10은 없어야 함)
+
+그리고 Makefile.systype으로 들어가 SYSTYPE="Frontera" 주석처리하고
+SYSTYPE="Ubuntu" 주석처리 해제 (주석처리된 다른 SYSTYPE은 다 지워도 됨)
+
+Config.sh 편집
+원래 폴더에는 Config.sh가 없으나 그냥 만들어주면 됨
+Template-Config.sh에서 필요한 부분만 주석해제하여 Config.sh에 복사
+Config.sh에 넣어줘야 하는 부분은 problem마다 다르므로 개인 조절 필요
+(Test problem의 경우에는 /scripts/test_problems에 각 문제의 Config.sh 존재
+다만 문제에 따라서 추가로 넣어줘야할 수 있으므로 각 문제 설명 참조)
+-> MPICH를 사용하는 경우 MPI_IN_PLACE 활성화 필요
+-> FFTW3을 쓰는 경우 USE_FFTW3 활성화 필요 (FFTW2는 물론 필요없음)
+
+마지막으로 parameter file 편집 (xxxxxx.param)
+역시 개인이 돌리는 시뮬레이션에 따라 다르게 편집해야함
+특히 initial conditino directory, output directory 위치 설정 필수
+그 외에 maximum allocate memory, snapshot type도 항상 조정해야함
+
+----------------------------GIZMO running-----------------------------
+
+make
+mpiexec -np 8 ./GIZMO parameterfile.param의
+mpiexec는 설치한 mpi library의 mpirun 명령어에 따라야 함
+(mpich의 경우는 mpiexec, openMP의 경우 다를 수 있음)
+-np 다음 숫자는 할당할 코어 수
+
+-----------------------------GalIC setup------------------------------
+GalIC의 전체 구조는 GIZMO와 동일 
+ -> GIZMO 실행에 성공했다면 GalIC 실행에는 큰 어려움은 없음
+다만 gmp library에 추가로 dependency가 있어 설치해주어야 함
+
+m4 library, gmp library 검색해서 다운
+gmp는 m4에 dependency가 있기 때문에 먼저 m4부터 설치
+
+m4 installation
+m4-x.y.tar.gz 압축해제 후 터미널로 압축해제한 디렉토리 들어가기
+./configure
+make
+make check
+sudo make install
+sudo make installcheck
+(기본 경로는 /usr/local)
+
+gmp installation
+gmp-x.y.z.tar.gz 압축해제 후 터미널로 압축해제한 디렉토리 들어가기
+./configure
+make
+make check
+sudo make install
+sudo make installcheck
+(기본 경로는 /usr/local)
+-> GalIC dependent library 설치 완료
+
+이후 Makefile, Config.sh와 parameterfile setup은 GIZMO와 거의 동일
+GalIC의 Config.sh는 GIZMO에 비해 매우 단순하여 큰 어려움은 없음
+parameterfile에서는 particle number, snapshot type, 
+maximum memory allocation, field sample particle number 등 주의
+
+----------------------------GIZMO running-----------------------------
+
+make
+mpiexec -np 8 ./GalIC parameterfile.param
+(GIZMO와 동일)
+

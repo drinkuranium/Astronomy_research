@@ -1,0 +1,134 @@
+---------------------------------------------------------------------
+After Installation, when log in is not possible
+
+Press Alt+Crtl+F2 and enter CUI mode and enter following command:
+export Lang=C
+sudo apt purge nvidia-*
+sudo apt install nvidia-driver-430
+
+Then restart -> log in will be possible
+
+---------------------------------------------------------------------
+Software updates
+
+sudo apt update
+sudo apt upgrade
+
+---------------------------------------------------------------------
+Vim installation and setting
+
+sudo apt install vim
+vi ~/.vimrc
+set bumber
+set ai
+set si
+set shiftwidth=4
+set ts=4
+set hlsearch
+set bs=indent,eol,start
+set history=1000
+set ruler
+set showmatch
+set nocompatible
+
+---------------------------------------------------------------------
+한글 세팅
+
+Language support로 들어가서 한국어 (Hangul) 선택
+설정에서 한영전환키에 한영키만 남겨두고 ㅔ거
+
+---------------------------------------------------------------------
+Activate FN
+
+sudo vim /etc/default/grub
+GRUB_CMDLINE_LINUX_DEFAULT = "quiet splash acpi_osi"
+
+---------------------------------------------------------------------
+윈도우와 시간 맞추기
+
+timedatectl set-local-rtc 1
+sudo vim /etc/default/rcS - then add UTC=no
+
+---------------------------------------------------------------------
+기본 디렉토리 이름 영문으로 변경
+
+gedit ~/.config/user-dirs.dirs (working directory가 어디든 상관없음)
+다음과 같이 영문으로 이름 바꿔서 저장
+
+XDG_DESKTOP_DIR="$HOME/Desktop"
+XDG_DOWNLOAD_DIR="$HOME/Downloads"
+XDG_TEMPLATES_DIR="$HOME/Templates"
+XDG_PUBLICSHARE_DIR="$HOME/Public"
+XDG_DOCUMENTS_DIR="$HOME/Documents"
+XDG_MUSIC_DIR="$HOME/Music"
+XDG_PICTURES_DIR="$HOME/Pictures"
+XDG_VIDEOS_DIR="$HOME/Videos"
+
+이후 home 디렉토리에서 실제 디렉토리 이름들도 한국어에서 영어로 바꿔야 함 
+
+---------------------------------------------------------------------
+Change Grub booting order
+
+sudo vim /boot/grub/grub.cfg
+이후 /etc/grub.d/30_os-prober 부분을 /etc/grub.d/10_linux 위로 올림
+
+---------------------------------------------------------------------
+바이러스 검사 툴킷 설치 (ClamAV, ClamTK)
+
+sudo apt install clamav
+cd /
+sudo mkdir virus (감염파일 격리할 디렉토리 설치)
+(바이러스 검사: clamscan -r /home --move=/virus)
+sudo apt install clamtk
+
+---------------------------------------------------------------------
+nautilus-admin 설치 - GUI 환경에서 sudo할 수 있게 해줌
+
+sudo apt install nautilus-admin
+
+---------------------------------------------------------------------
+gnome-sushi 설치 - 이미지 미리보기 가능
+
+sudo apt install gnome-sushi
+(미리보기는 노틸러스에서 이미지 선택 후 스페이스바)
+
+---------------------------------------------------------------------
+gnome-tweaks 설치
+
+sudo apt install gnome-tweaks
+세부 환경 설정
+데스크톱 - 내 폴더 켜기
+모양사 - 배경과 화면 잠금 원하는 사진 다운 받아서 설정
+최상위 표시줄 - 배터리 잔량 백불율, 날짜, 초 켜기
+
+---------------------------------------------------------------------
+Google Chrome installation
+
+wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list'
+sudo apt update
+sudo apt install google-chrome-stable
+sudo rm -rf /etc/apt/sources.list.d/google.list
+
+---------------------------------------------------------------------
+아마존 앱 삭제, 사이드바에서 메일, 리듬박스, 도움말 삭제
+
+---------------------------------------------------------------------
+CPU 최대 클럭 제한
+다음과 같은 bash script를 만들어서 /home에 저장
+
+#!/bin/bash
+for x in /sys/devices/system/cpu/cpu[0-9]/cpufreq/; do
+	echo 3200000 > $x/scaling_max_freq
+done
+echo 3200000 > /sys/devices/system/cpu/cpu10/cpufreq/scaling_max_freq
+echo 3200000 > /sys/devices/system/cpu/cpu11/cpufreq/scaling_max_freq
+
+이 파일의 이름을 limit_CPU_clock.sh라 하면,
+sudo -i
+crontab -e
+(여러 옵션이 뜰텐데 vim 선택)
+마지막 줄에 @reboot /home/limit_CPU_clock.sh 추가
+
+CPU 최대 클럭은 현재는 3200000이 최적으로 보이나, 향후 변동 가능
+/sys/devices/system/cpu/intel_pstate/no_turbo가 0인지 확인 필수

@@ -1,0 +1,21 @@
+램 사용량 확인
+free (watch free - 실시간 확인)
+
+CPU 정보 확인
+cat /proc/cpuinfo
+
+CPU 사용량 확인
+sudo apt install sysstat 설치 이후
+mpstat -P ALL 1 1 (watch mpstat -P ALL 1 1 - 실시간 확인)
+
+CPU 온도 확인
+sudo apt install lm-sensors 설치 이후
+sensors (watch sensors - 실시간 확인)
+(세팅에 따라 다른 부품 온도도 확인 가능)
+
+CPU 클럭 확인
+sudo apt install inxi 설치 이후
+inxi -C
+이 경우 watch inxi -C는 글자가 깨짐
+대신 watch "lscpu | grep MHz | awk '{print }'"로 실시간 확인
+이 경우에는 코어별로 클럭 확인은 불가능
