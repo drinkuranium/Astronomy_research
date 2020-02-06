@@ -135,3 +135,18 @@ Swapfile을 주는 것이 문제였는지, CPU 클럭 제한을 잘못했는지 
  - 초기 계산은 노트북이 코어가 많아서 빠름 (적용한 코어 수 4 vs 8)
  - 그런데 iteration은 데스크탑이 클럭이 3900MHz 높아서 그런지 데스크탑이 더 빠름
  - 노트북 성능 향상을 위해서는 쿨러가 필수일 듯
+
+---------------------------------2020. 02. 04----------------------------------
+
+GIZMO test problem 중 Galactic disk (with cooling) 실행 (아직도 실행 중)
+ - Timestep이 너무 작아서 실행시간이 너무 오래 걸림
+ - 데스크탑으로 돌려놓고 내일 결과 확인 예정 (maximum cpu time에 걸릴 듯)
+ - 다만 현재 다시 보니 ADAPTIVE_GRAV_FORGAS 때문일 수도 있겠다는 생각
+
+bash script 기본적인 문법에 대한 공부
+
+GIZMO user's guide 공부
+ - section 7: Config.sh (Setting compile-time options) 
+              Galaxy & Galactic Star Formation Options 부터
+			  ~ Sink-Particle Dynamics (IMF, Star formation, Planets, Compact objects) 까지
+
