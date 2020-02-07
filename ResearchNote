@@ -150,3 +150,15 @@ GIZMO user's guide 공부
               Galaxy & Galactic Star Formation Options 부터
 			  ~ Sink-Particle Dynamics (IMF, Star formation, Planets, Compact objects) 까지
 
+노트북 언더볼팅 - 0.15mV 테스트까지 성공
+
+---------------------------------2020. 02. 04----------------------------------
+
+노트북 언더볼팅
+ - 0.165mV 프리징 발견, 0.16mV 더 심도있게 테스트 필요
+ - 우분투에서도 0.15mV 언더볼트, GalIC Model_H1 실행속도 약 10% 향상
+
+
+GIZMO user's guide 공부
+ - section 7: Config.sh (Setting compile-time options) 
+              SuperMassive Black Hole Options 살짝 
