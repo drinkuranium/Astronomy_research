@@ -124,7 +124,7 @@ GalIC 결과를 이용해 Density contour plot하는 코드 작성
 
 Swapfile을 주는 것이 문제였는지, CPU 클럭 제한을 잘못했는지 우분투 부팅이 안됨...
 
----------------------------------2020. 02. 04----------------------------------
+---------------------------------2020. 02. 05----------------------------------
 
 노트북 우분투 OS 포맷 후 재설치, 환경 다시 세팅
  - HDF5-1.8에서 HDF5-1.10으로 업그레이드하고 설치 경로 정리
@@ -136,7 +136,7 @@ Swapfile을 주는 것이 문제였는지, CPU 클럭 제한을 잘못했는지 
  - 그런데 iteration은 데스크탑이 클럭이 3900MHz 높아서 그런지 데스크탑이 더 빠름
  - 노트북 성능 향상을 위해서는 쿨러가 필수일 듯
 
----------------------------------2020. 02. 04----------------------------------
+---------------------------------2020. 02. 06----------------------------------
 
 GIZMO test problem 중 Galactic disk (with cooling) 실행 (아직도 실행 중)
  - Timestep이 너무 작아서 실행시간이 너무 오래 걸림
@@ -152,7 +152,7 @@ GIZMO user's guide 공부
 
 노트북 언더볼팅 - 0.15mV 테스트까지 성공
 
----------------------------------2020. 02. 04----------------------------------
+---------------------------------2020. 02. 07----------------------------------
 
 노트북 언더볼팅
  - 0.165mV 프리징 발견, 0.16mV 더 심도있게 테스트 필요
@@ -162,3 +162,23 @@ GIZMO user's guide 공부
 GIZMO user's guide 공부
  - section 7: Config.sh (Setting compile-time options) 
               SuperMassive Black Hole Options 살짝 
+
+------------------------2020. 02. 08 ~ 2020. 02. 09 주말-----------------------
+
+Gizmo User's Guide 공부 
+ - section 7: Config.sh (Setting compile-time options) 
+              SuperMassive Black Hole Options ~ 마지막까지
+ - section 8: The Paramterfile 
+              Generic (Always-Required) Parameters 살짝
+
+---------------------------------2020. 02. 10----------------------------------
+
+Gizmo User's Guide 공부 
+ - section 8: The parameterfile 전체
+ - section 9: Snapshot & Initial Condition Files 전체
+ - section 10: Log Outputs & Diagnostic Files 전체
+ - section 12: Useful Additional Resources 전체
+ - section 13: Frequently Asked Questions 전체
+ - section 14: Disclaimer 전체라고 할 것도 없는 3줄
+
+노트북 undervolting 부팅 시 작동 테스트, 성능 향상 테스트
