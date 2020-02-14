@@ -72,6 +72,10 @@ CXX      =  mpiCC
 FC       =  $(CC) #mpifort
 OPTIMIZE = -O2 -funroll-loops
 OPTIMIZE += -g -Wall # compiler warnings
+ifeq (OPENMP,$(findstring OPENMP,$(CONFIGVARS)))
+OPTIMIZE += -fopenmp # openmp required compiler flags
+FC       = $(CC)
+endif
 GSL_INCL = -I/usr/local/include
 GSL_LIBS = -L/usr/local/lib
 FFTW_INCL= -I/usr/local/include
@@ -81,11 +85,14 @@ HDF5LIB  = -L/usr/local/hdf5/lib -lhdf5
 MPICHLIB = #
 OPT     += #
 endif
-
+이후 환경변수에 export OMP_NUM_THREADS=2 추
 CC는 mpi C compiler, CXX는 mpi c++ compiler로 찾아보고 맞는 것으로 추가
 FC는 아직 잘 모르겠다..
 Optimize는 gcc optimize option, 내 컴퓨터 기준으로 -O2만 주는 것이 최적
-(funroll-loops는 오히려 더 느려짐)YSTYPE="Frontera"
+(-O3나 funroll-loops는 오히려 더 느려짐)
+OPENMP 사용을 위해 optimzie += -fopenmp (GCC 기준 openmp 사용 flag) 추가
+(ifeq~endif까지 4줄 다른 데서 복사 붙여넣기 하면 됨)
+(내 노트북은 하이퍼스레딩 지원. User's guide는 하이퍼스레딩에는 openmp 사용 추천)
 GSL, FFTW, HDF, MPI 구문들은 library 위치 지정
 (-I, -L 옵션은 linker에게 다음에 오는 주소들이 
 각각 header file과 library file을 찾는 위치를 지정해준다는 것을 알려줌)
@@ -150,7 +157,7 @@ GalIC의 Config.sh는 GIZMO에 비해 매우 단순하여 큰 어려움은 없�
 parameterfile에서는 particle number, snapshot type, 
 maximum memory allocation, field sample particle number 등 주의
 
-----------------------------GIZMO running-----------------------------
+----------------------------GalIC running-----------------------------
 
 make
 mpiexec -np 8 ./GalIC parameterfile.param

@@ -183,9 +183,70 @@ Gizmo User's Guide 공부
 
 노트북 undervolting 부팅 시 작동 테스트, 성능 향상 테스트
 
----------------------------------2020. 02. 10----------------------------------
+---------------------------------2020. 02. 11----------------------------------
 
 2월 4일에 만든 코드 개선
  - Halo, bulge star가 disk star에 의해 가려지는 현상 개선
 
 PDF 리더 까느라 뭘 많이 하지 못했다...
+
+---------------------------------2020. 02. 12----------------------------------
+
+논문공부
+- Hopkins, P. F. 2015, A New Class of Accurate, Mesh-Free Hydrodynamic Simulation Methods
+  (7페이지까지)
+
+GalIc로 만들어진 은하 Sersic profile에 fitting하는 코드 작성
+ -> particle을 어디까지 포함하느냐에 따라 Sersic index가 크게 달라짐
+ -> Particle 갯수가 부족한 것 때문인지는 불확실 (아닐 가능성이 클 듯)
+ -> log scale에서 best-fit 하느냐, 그냥 best-fit 하느냐도 불확실
+    (일반 스케일에서는 Sersic index가 수렴, 그러나 R이 커질수록 차이가 커짐)
+	(로그 스케일에서는 R이 커져도 추세선이 좋으나 Sersic index도 점점 커짐)
+
+---------------------------------2020. 02. 13----------------------------------
+
+논문공부
+- Hopkins, P. F. 2015, A New Class of Accurate, Mesh-Free Hydrodynamic Simulation Methods
+  -> 6페이지 Taylor 전개 수학적 엄밀성 조사
+  -> Boundary를 제외한 부분에서는 이해됨
+  -> Boundary에서는 Talyor expansion이 불가능한 것 같은데, 이는 어떻게 한 건지?
+
+GalIc로 만들어진 은하 Sersic profile에 fitting하는 코드 개선
+ - I_e를 effective radius에서의 밝기를 쓰도록 조정
+ - 기존 코드는 너무 멀리 있는 particle 포함시 resolution이 떨어져 R_e 오차가 큼
+  -> particle 갯수에 따라서 R의 grid point를 만들도록 설정 (adaptive in R)
+ - 전체적인 fitting에서는 개선이 있었음
+ - Sersic index의 fluctuation도 많이 줄음
+  -> 그러나 여전히 멀리있는 particle을 포함하면 Sersic index 역시 증가
+
+Hernquist profile을 따르는 은하의 Sersic index를 수학적으로 구하려고 시도
+ - R->inf의 경우에서도 converge하지 않음, 즉 해석적으로 구하는 것은 불가
+ - R domain의 확대에 따른 Sersic index의 증가는 어쩔 수 없는 현상인 듯
+
+GIZMO makefile 및 Config.sh에 openMP 추가
+ - Gizo User's Guide에 따르면 Hyper-threading에는 openMP가 필수
+
+GalIC로 만든 은하를 GIZMO를 통해 evolution test
+
+
+---------------------------------2020. 02. 14----------------------------------
+서우영 박사님이 주신 parameter로 GalIC를 통해 은하 형성 후, GIZMO로 진화시킴
+ - Spiral structure, Bar evolution등 확인
+ - Fourier analysis로 azimuthal structure 분석 시도
+  -> R에 따라서 variation이 너무 큼. 무언가 잘못된 듯
+
+랩미팅 참가
+
+서우영 박사님과 미팅
+1.어떻게 gas particle을 추가할 것인가?
+ - GalIC로 만든 은하에 scale height로 주어지는 PDF를 따라 Weighted Monte Carlo를 이용해 입자 추가
+ - 이후 GIZMO를 통해 조금 진화시켜서 gas particle의 R에 따른 scale height 변화 확인
+ - 변화가 거의 없을 시 relaxation이 되었다 보고 초기 은하로 사용
+ - Scale height의 form을 아는 경우 Monte Carlo 방법으로 입자를 추가할 때 바로 사용 가능
+  -> 이 경우 GIZMO를 통한 relaxation을 사용하지 않아도 됨 (테스트 용으로만)
+ - Gas particle 추가는 서우영 박사님이 보내주신 코드 참고
+   (Accretion disk 코드이므로, 적절하게 변형해주어야 함)
+   (특히 GalIC에서 먼저 파일을 읽는 코드 필요)
+2. Density contour plot할 때 linked list를 사용한 hash table이 나음
+
+Weighted Monte Carlo method 연습
