@@ -190,7 +190,7 @@ Gizmo User's Guide 공부
 
 PDF 리더 까느라 뭘 많이 하지 못했다...
 
----------------------------------2020. 02. 12----------------------------------
+---------------------------------2020. 02. 1215----------------------------------
 
 논문공부
 - Hopkins, P. F. 2015, A New Class of Accurate, Mesh-Free Hydrodynamic Simulation Methods
@@ -250,3 +250,21 @@ GalIC로 만든 은하를 GIZMO를 통해 evolution test
 2. Density contour plot할 때 linked list를 사용한 hash table이 나음
 
 Weighted Monte Carlo method 연습
+
+------------------------2020. 02. 15 ~ 2020. 02. 16 주말-----------------------
+별 일 안했습니당
+
+---------------------------------2020. 02. 17----------------------------------
+Sprical and bar structure 분석을 위한 FFT 코드 수정
+ - m=3를 비롯한 다른 mode의 크기가 크고, 시간에 따른 값도 stable 하지 않음
+ - 은하 중심이 정확히 (0, 0)에 위치하지 않기 때문
+ - 각 snapshot 별로 데이터를 읽을 때 이를 보정해주어야 함
+
+서우영 박사님과 면담
+ - Gas scale height가 작은 이유에 대한 논의 (어처피 조금 진화시키면 작아짐)
+ - Particle에 internal energy 주는 방법 (sound speed와 연관성 추가 공부 필요)
+ - Kernel function 설정 방법 및 코드
+ - 은하 시뮬레이션 할 때 GIZMO flag 뭘 넣을 것인지
+ - 기타 연구 진행에 필요한 팁들
+
+Density contour plot하는 코드 user interface 추가 (ptype, size 고르기 등)

@@ -116,7 +116,7 @@ sudo rm -rf /etc/apt/sources.list.d/google.list
 ---------------------------------------------------------------------
 아나콘다 설치
 
-인터넷 상에서 아나콘다 다운 후, 하라는 데로 하면 됨
+인터넷 상에서 아나콘다 다운 후, 하라는 대로 하면 됨
 
 ---------------------------------------------------------------------
 언더볼팅
@@ -124,12 +124,28 @@ sudo rm -rf /etc/apt/sources.list.d/google.list
 아나콘다 설치 이후에만 가능
 먼저 바이오스에서 secure boot 해제
 sudo pip install undervolt
-undervolt --cpu -150 --cache -150
+sudo undervolt --cpu -150 --cache -150
 (윈도우에서 이 컴퓨터의 최적 언더볼팅은 150mV라는 것을 확인)
-재부팅 시에도 언더볼트 값은 유지됨
- -> 다시 바이오스에서 secure boot 활성화
+sudo undervolt --temp 80 (안정성을 위해 80도 세팅, 높여서 성능 중시 가능)
+
+재부팅 시에도 언더볼팅 유지를 위해 다음과 같이 제작
+sudo vim /home/undervolt.sh (bash 파일 제작)
+
+#!/bin/bash
+
+sudo undervolt --core -150 --cache -150
+sudo undervolt --temp 80
+
+이후 실행 가능하게 파일을 만든 뒤, crontab을 통해 부팅 시 자동시작
+chmod 700 undervolt.sh
+sudo -i (이 모드에서 해야 vim으로 edit 가능하더라)
+crontab -e
+이후 다음 한 줄 추가
+
+@reboot /home/undervolt.sh
 
 ---------------------------------------------------------------------
+################### Undervolt package로 대체 가능 ###################
 CPU 최대 클럭 제한
 다음과 같은 bash script를 만들어서 /home에 저장
 
@@ -148,3 +164,4 @@ crontab -e
 
 CPU 최대 클럭은 현재는 3200000이 최적으로 보이나, 향후 변동 가능
 /sys/devices/system/cpu/intel_pstate/no_turbo가 0인지 확인 필수
+#####################################################################
