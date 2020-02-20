@@ -268,3 +268,38 @@ Sprical and bar structure 분석을 위한 FFT 코드 수정
  - 기타 연구 진행에 필요한 팁들
 
 Density contour plot하는 코드 user interface 추가 (ptype, size 고르기 등)
+
+---------------------------------2020. 02. 18----------------------------------
+analysis.py 수정
+ - load_data에서 ptype을 고를 수 있게 수정
+ - 각 분석 subroutine을 실행 시  size, axis, ptype 등을 선택할 수 있는 UI 추가
+ - Coordinates, Velocities를 읽을 때 CM이 (0,0)에 오도록 수정
+
+---------------------------------2020. 02. 19----------------------------------
+add_gas.py 코딩하는 중
+ - 현재 추가된 사항
+  -> Gas particle을 PDF에 따라 randomly generate
+  -> Gas particle의 위치에 따라 rotcurve를 interpolate한 속도 부여
+  -> 기존 IC file 내용을 새 IC file에 복사
+
+GalIC 코드 수정
+ - Structural constant (특히 scale height)는 코드 실행 시 stdout으로 나옴
+ - add_gas.py를 위해 structual constants 들을 파일로 출력하도록 수정
+   (출력 파일: output directory에 structural_constants.txt)
+
+---------------------------------2020. 02. 19----------------------------------
+add_gas.py 코딩 완료
+ - 추가 사항
+  -> Gas Particle에 mass, ParticleID, InternalEnergy assign하는 코드 추가
+  -> 새 IC file (hdf5 file) 작성
+- 현재 add_gas.py를 이용해 gas particle을 추가한 IC 파일을 GIZMO로 테스트 중
+  -> 실행은 잘 되는 것은 확인함
+  -> Star formation 나타나는 것도 확인
+- 앞으로 확인할 사항들
+  -> InternalEnergy가 정말 physical하게 맞는 값인가?
+  -> Metallicity 부분은 어떻게 처리해야하는가?
+  -> 만든 HDF5 파일이 완벽한 양식으로 만들어진 것인가?
+- 확인된 오류
+  -> load_from_snapshot에 value='Keys'를 주었을 경우 Key를 반환하긴 하나 에러 발생
+  -> HDF5 파일이 완벽한 양식으로 만들어지지 않아서 그런듯함
+  -> 이 에러가 GIZMO 코드의 결과에도 영향을 줄 지는 미지수
