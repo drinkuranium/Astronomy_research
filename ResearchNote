@@ -303,3 +303,37 @@ add_gas.py 코딩 완료
   -> load_from_snapshot에 value='Keys'를 주었을 경우 Key를 반환하긴 하나 에러 발생
   -> HDF5 파일이 완벽한 양식으로 만들어지지 않아서 그런듯함
   -> 이 에러가 GIZMO 코드의 결과에도 영향을 줄 지는 미지수
+
+서우영 박사님이 주신 컨디션으로 만든 GalIC 파일에 add_gas로  가스 추가 후 GIZMO로 진화시킴
+ - Cooling을 준 것과 주지 않은 것 2가지
+---------------------------------2020. 02. 19----------------------------------
+진화시켰던 은하 분석
+ - Star formation 등의 활동은 정상적으로 나타남
+ - Cooling을 준 은하는 Bar가 거의 나타나지 않고, Cooling을 주지 않은 은하는 Bar가 나타남
+ - 이는 CMC (Central Mass Concentration)으로 인한 듯
+   -> Cooling을 준 은하는 gas particle이 강하게 galactic center로 모임
+   -> Galactic Center에서 강한 star formation
+   -> CMC 크게 증가 (density contour로 확인, cooling X 때보다 약 10배 가량  증가)
+ - Cooling을 주지 않은 은하는 초기에만 star formation이 일어나고 이후로는 잠잠
+   -> CMC도 거의 관찰되지 않음
+   -> 온도가 낮아지지 않은 것에 의한 영향인 듯. 물리적으로 대략적으로 맞는 듯.
+
+GIZMO로 gas particle을 equalibrium으로 만드는 루틴 정석화
+ - GIZMO로 t=0.01까지만 진화시키고, snapshot은 0.001마다 제작
+ - Config.sh에서는 HYDRO solver를 제외한 모든 physics off
+
+GalIC로 Bar2, Bar3 은하 제작 (세부사항은 아래에)
+
+테스트 케이스 20가지 인턴실 컴퓨터에 돌려놓음
+ - 은하 종류 4가지 (Bar1, Bar2, Bar3, M4)
+   -> Bar1: 서우영 박사님이 제시하신 컨디션
+   -> Bar2: Bar1에 bulge 추가
+   -> Bar3: Bar2에서 M4와 같이 velocity structure, stretch 등 변경
+   -> M4: GalIc에서 예시로 주어진 M4 (with particle number = 100000, respectively)
+ - Physics 종류 5가지
+   1. OnlyGrav: 모든 physics를 끄고 중력만 킴
+   2. Basic: 1 + COOLING,  METAL, GALSF
+   3. CoolingLowT: 2 + COOL_LOW_TEMPERATURE
+   4. SFR_Criteria: 2 + GALSF_SFR_MOLECULAR_CRITERION, GALSF_SFR_SF_CRITERION=0
+   5. SFR_Criteria_Feedback: 4 + GALSF_EFFECTIVE_EQS, GALSF_SUBGRID_WINDS
+ - Terminal 4개에 각각 bash script로 실행시켰으며, 주말 이후 결과 확인 예정
