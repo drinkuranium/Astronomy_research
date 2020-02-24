@@ -287,7 +287,7 @@ GalIC 코드 수정
  - add_gas.py를 위해 structual constants 들을 파일로 출력하도록 수정
    (출력 파일: output directory에 structural_constants.txt)
 
----------------------------------2020. 02. 19----------------------------------
+---------------------------------2020. 02. 20----------------------------------
 add_gas.py 코딩 완료
  - 추가 사항
   -> Gas Particle에 mass, ParticleID, InternalEnergy assign하는 코드 추가
@@ -306,7 +306,9 @@ add_gas.py 코딩 완료
 
 서우영 박사님이 주신 컨디션으로 만든 GalIC 파일에 add_gas로  가스 추가 후 GIZMO로 진화시킴
  - Cooling을 준 것과 주지 않은 것 2가지
----------------------------------2020. 02. 19----------------------------------
+
+---------------------------------2020. 02. 21----------------------------------
+
 진화시켰던 은하 분석
  - Star formation 등의 활동은 정상적으로 나타남
  - Cooling을 준 은하는 Bar가 거의 나타나지 않고, Cooling을 주지 않은 은하는 Bar가 나타남
@@ -337,3 +339,22 @@ GalIC로 Bar2, Bar3 은하 제작 (세부사항은 아래에)
    4. SFR_Criteria: 2 + GALSF_SFR_MOLECULAR_CRITERION, GALSF_SFR_SF_CRITERION=0
    5. SFR_Criteria_Feedback: 4 + GALSF_EFFECTIVE_EQS, GALSF_SUBGRID_WINDS
  - Terminal 4개에 각각 bash script로 실행시켰으며, 주말 이후 결과 확인 예정
+	
+------------------------2020. 02. 22 ~ 2020. 02. 23 주말-----------------------
+
+진화시킨 은하 추가 분석
+ - CM correction code도 각 galactic component를 분리해서 하는 오류 발견
+   -> 전체 은하의 CM을 구하도록 수정
+ - 그러나 여전히  CM correction을 해도 은하 중심을 정확히 보정하지 못하는 것을 발견
+ - Local density maximum, gravitation potential well 등의 대안을 고려해야 할 듯
+
+은하내 위치에 따른 particle들의 hash table 코딩 시작
+
+---------------------------------2020. 02. 24----------------------------------
+
+add_gas.py에서 가스의 속도를 주는 데에 방향을 잘못주는 오류 발견
+ - 이를 이용한 은하는 gas가 중심으로 모여들다가 산란되어 퍼져버림
+ - 수정 후 속도 방향도 잘 주어지는 것을 확인
+ - 이를 이용한 은하 진화는 다시 시도 중
+
+add_gas.py가 자동으로 GIZMO 진화를 통해 equalibrium이 도달된 IC file을 만들도록 수정
