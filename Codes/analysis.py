@@ -2,7 +2,9 @@ import h5py
 import numpy as np
 import os
 import matplotlib.pyplot as plt
+import math
 import sys
+import time  ## For debugging purpose
 from scipy.optimize import curve_fit
 from pathlib import Path
 
@@ -590,7 +592,13 @@ def plot_density_contour(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
 
     ## Load the locations of the particles
     value = 'Coordinates'
-    ptype_list, data_list = load_data(value, sdir, snum, ptype_list)
+    ptype_exist, data_list = load_data(value, sdir, snum, ptype_list)
+    ## Load mass data
+    value = 'Masses'
+    masses = np.zeros(6)
+    for ptype in ptype_exist:
+        mass = load_from_snapshot(value, ptype, sdir, snum)
+        masses[ptype] = mass[0]  ## Assume mass of each ptype particle is the same
 
     ## Treat float of int number as a list of length 1
     if type(sizes) == float or type(sizes) == int: sizes = [sizes]
@@ -620,34 +628,73 @@ def plot_density_contour(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
         x_grid = np.linspace(-size, size, grid_num, endpoint=True)
         y_grid = np.linspace(-size, size, grid_num, endpoint=True)
         X, Y = np.meshgrid(x_grid, y_grid)
-        resolution = 2*size/(grid_num-1)
+        grid_len = 2*size/(grid_num-1)
 
-        for x_axis, y_axis in axes:
+        for x_axis, y_axis in axes:       
 
             ## Density of each grid
             density = np.zeros((grid_num, grid_num))
             
             ## Remove data out of the contour domain 
-            for data in data_list:
+            for i in range(len(ptype_exist)):
+                ptype, data = ptype_exist[i], data_list[i]
+                ## For Kernel Estimation
+                sigma = np.std(data[:,[x_axis,y_axis]], axis=0)
+                h = sigma*len(data)**(-1/6)  ## Silverman's rule in 2D
                 index = np.where((abs(data[:,x_axis])<size) & (abs(data[:,y_axis])<size))
                 data = data[index]
-
-                ## Assign particles to grid points   
+                ## Construct kernel matrix
+                cutoff_intensity = 0.1
+                ## Kernel should include every elements where the elements
+                ## are bigger than 0.1 * origin value
+                kernel_len = math.ceil(max(h)/grid_len*(-2*np.log(cutoff_intensity))**(1/2))
+                kernel = np.ones((kernel_len*2+1, kernel_len*2+1))
+                origin = kernel_len
+                print(np.shape(kernel))
+                for j in range(origin):
+                    kernel[j] *= np.exp(-((j-origin)*grid_len/h[0])**2)
+                kernel[origin+1:] = np.flip(kernel[:origin], axis=0)
+                for j in range(origin):
+                    kernel[:,j] *= np.exp(-((j-origin)*grid_len/h[1])**2)
+                kernel[:,origin+1:] = np.flip(kernel[:,:origin], axis=1)
+                kernel /= np.sum(kernel)  ## Normalization
+                ## Decide limit of grid that will be included in the kernel
+                ## When the value of kernel function at a grid is smaller than
+                ## kernel function at origin * cutoff_intensity, do not include
+                cutoff_x = math.ceil(h[0]/grid_len*(-2*np.log(cutoff_intensity))**(1/2))
+                cutoff_y = math.ceil(h[1]/grid_len*(-2*np.log(cutoff_intensity))**(1/2))
+                if cutoff_x > grid_num: cutoff_x = grid_num
+                if cutoff_y > grid_num: cutoff_y = grid_num
+                ## Assign particles to grid points and construct density
+                print(cutoff_x, cutoff_y)
                 data += size + size/grid_num/2
                 for particle in data:
-                    grid_x = int(particle[x_axis]//resolution)
-                    grid_y = int(particle[y_axis]//resolution)
-                    density[grid_x, grid_y] += 1
+                    grid_x = int(particle[x_axis]//grid_len)
+                    grid_y = int(particle[y_axis]//grid_len)
+                    ## Boundaries
+                    x_left = min(grid_x, cutoff_x)
+                    x_right = min(grid_num-grid_x-1, cutoff_x)
+                    y_left = min(grid_y, cutoff_y)
+                    y_right = min(grid_num-grid_y-1, cutoff_y)
+                    sgrid = np.copy(kernel[origin-x_left : origin+x_right+1,
+                                           origin-y_left : origin+y_right+1])
+                    sgrid_no_boundary = np.copy(kernel[origin-cutoff_x:origin+cutoff_x+1,
+                                                       origin-cutoff_y:origin+cutoff_y+1])
+                    sgrid /= np.sum(sgrid_no_boundary)  ## Normalization for conservation
+                    sgrid *= masses[ptype]/grid_len**3
+                    density[grid_x-x_left : grid_x+x_right+1,
+                            grid_y-y_left : grid_y+y_right+1] += sgrid
+            density = density.T        
 
             ## Plot contour
-            density = density.T
-#            fig, ax = plt.subplots(figsize=(12,10))
-#            plt.axis('equal')
-#            contour = plt.contourf(X, Y, density, 40)
-#            fig.colorbar(contour)
-            plt.figure(figsize=(10,10))
+            fig, ax = plt.subplots(figsize=(12,10))
             plt.axis('equal')
-            plt.contourf(X, Y, density, levels=np.arange(0, 1500, 25))
+            contour = plt.contourf(X, Y, density, 40)
+            fig.colorbar(contour)
+#            plt.figure(figsize=(10,10))
+#            plt.axis('equal')
+#            plt.contourf(X, Y, density, levels=np.arange(0, 1500, 25))
+#            x_label, y_label = axis_label[x_axis], axis_label[y_axis]
             x_label, y_label = axis_label[x_axis], axis_label[y_axis]
             plt.xlabel(x_label+" axis [kpc]")
             plt.ylabel(y_label+" axis [kpc]")
@@ -1009,14 +1056,15 @@ def plot_mass_vs_radius_2D(sdir, snum, radius, axes=[(0,1),(0,2),(1,2)],
 
 ## Select model
 sdir = "/home/du/gizmo/TestGas/Test_Gas_Generation/results"
-snum = 10
+snum = 15
 
 ## Plot the locations of the particles
-#plot_particles(sdir, snum, sizes=[1], axes=(0,2), ptype_list=[0])
+plot_particles(sdir, snum, sizes=[10], axes=(0,1), ptype_list=[0,2,4], save=True)
 
 ## Plot the density contours
-plot_density_contour(sdir, snum, sizes=[10], axes=(0,1), ptype_list=[1,2,4,0])
-
+a = time.time()
+plot_density_contour(sdir, snum, sizes=[10], axes=(0,1), ptype_list=[0,2,4], save=True)
+print(time.time()-a)
 ## Fit the luminosity curve to Sersic profile
 #sersic_fitting(sdir, snum, axes=(0,1))
 

@@ -411,3 +411,13 @@ analysis_hashtable.py 코딩:
   - 장점 : 특정 ID를 가진 particle 추척 가능
   - 단점 : 메모리와 속도 효율성이 크게 떨어짐
   - 차이점 : project하는 축 방향으로도 size 내의 particle만 고려
+
+-------------------------2020. 03. 02 ~ 2020. 03. 06---------------------------
+
+Density contour 구할 때 kernel function 활용하는 코드 제작
+ - Gaussian kernel 활용
+ - Silverman's rule을 따라 각 ptype, axis 별로 stddev를 이용한 bandwidth
+ - 질량이 매우 크나 희박하게 분포한 Halo particle에도 잘 먹힘
+ - 다만 halo particle의 경우 kernel length가 너무 커서 3D grid의 경우 메모리에러 발생
+ - 추후 cubic spline kernel로 바꿀 예정 - 관련 문서 찾는 중
+

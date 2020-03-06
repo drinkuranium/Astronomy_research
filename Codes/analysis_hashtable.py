@@ -115,6 +115,8 @@ class HashTables:
     """Stores particle information as a form of a hash table.
     
     Attributes:
+      sdir (string): Parent directory of the snapshot file
+      snum (int): Number of the snapshot
       size (float): Size of a box that particles will be stored
       grid_num (int): Number of grids, decides the number of table elements
       grid_len (float): Length of each grid
@@ -158,6 +160,8 @@ class HashTables:
             of the simulation (particle number of the simulation).
         """
 
+        self.sdir = sdir  ## Parent directory of the snapshot file
+        self.snum = snum  ## Number of the snapshot
         self.size = size  ## Size of box which will be included in the table
         self.grid_num = grid_num   ## Number of table elements
         self.grid_len = size*2/grid_num  ## Grid length
@@ -383,7 +387,14 @@ class HashTables:
                 print("Please follow the format: [0, 1, 2] for [x, y, z] axis \
                       - then specify the plane by pairing axis like (0,2), \
                       in case of yz-plane.")
-                return None 
+                return None
+
+        ## Load mass data
+        value = 'Masses'
+        masses = np.zeros(6)
+        for ptype in self.ptype_exist:
+            mass = load_from_snapshot(value, ptype, sdir, snum)
+            masses[ptype] = mass[0]  ## Assume mass of each ptype particle is the same
 
         ## Plot density contour
         axis_label = ["X", "Y", "Z"]
@@ -391,13 +402,75 @@ class HashTables:
         x_grid = np.linspace(-self.size, self.size, self.grid_num, endpoint=True)
         y_grid = np.linspace(-self.size, self.size, self.grid_num, endpoint=True)
         X, Y = np.meshgrid(x_grid, y_grid)
-        for x_axis, y_axis in axes:  ## Plot for every projected planes
+        
+        ## Construct 3D density matrix
+        density3D = np.zeros((self.grid_num, self.grid_num, self.grid_num))
+        for ptype in ptype_list:
+            ## Compute stddev of 'every particles' of each ptype
+            data_all_particle = load_from_snapshot('Coordinates', ptype, self.sdir, self.snum)
+            sigma = np.std(data_all_particle, axis=0)
+            ## For Kernel Estimation
+            h = sigma*(4/5/len(data_all_particle))**(1/7)  ## Silverman's rule in 3D
+            ## Construct kernel matrix
+            cutoff_intensity = 0.1
+            ## Kernel should include every elements where the elements
+            ## are bigger than 0.1 * origin value
+            kernel_len = int(max(h)/self.grid_len*(-2*np.log(cutoff_intensity))**(1/2))+1
+            kernel = np.ones((kernel_len*2+1, kernel_len*2+1, kernel_len*2+1))
+            origin = kernel_len
+            for i in range(origin):
+                kernel[i] *= np.exp(-((i-origin)*self.grid_len/h[0])**2)
+            kernel[origin+1:] = np.flip(kernel[:origin], axis=0)
+            for i in range(origin):
+                kernel[:,i] *= np.exp(-((i-origin)*self.grid_len/h[1])**2)
+            kernel[:,origin+1:] = np.flip(kernel[:,:origin], axis=1)
+            for i in range(origin):
+                kernel[:,:,i] *= np.exp(-((i-origin)*self.grid_len/h[2])**2)
+            kernel[:,:,origin+1:] = np.flip(kernel[:,:,:origin], axis=2)
+            kernel /= np.sum(kernel)  ## Normalization
+            ## Decide limit of grid that will be included in the kernel
+            ## When the value of kernel function at a grid is smaller than
+            ## kernel function at origin * cutoff_intensity, do not include
+            cutoff_x = int(h[0]/self.grid_len*(-2*np.log(cutoff_intensity))**(1/2))+1
+            cutoff_y = int(h[1]/self.grid_len*(-2*np.log(cutoff_intensity))**(1/2))+1
+            cutoff_z = int(h[1]/self.grid_len*(-2*np.log(cutoff_intensity))**(1/2))+1
+            if cutoff_x > self.grid_num: cutoff_x = self.grid_num
+            if cutoff_y > self.grid_num: cutoff_y = self.grid_num
+            if cutoff_z > self.grid_num: cutoff_z = self.grid_num
+            print(cutoff_x, cutoff_y, cutoff_z)
+            
+            ## Assign particles to grid points and construct density matrix
+            exist = np.where(self.NumPart[ptype]>0)
+            for i in range(len(exist[0])):
+                grid_x, grid_y, grid_z = exist[0][i], exist[1][i], exist[2][i]
+                pnum = self.NumPart[ptype, grid_x, grid_y, grid_z]
+                ## Boundaries
+                x_left = min(grid_x, cutoff_x)
+                x_right = min(self.grid_num-grid_x-1, cutoff_x)
+                y_left = min(grid_y, cutoff_y)
+                y_right = min(self.grid_num-grid_y-1, cutoff_y)
+                z_left = min(grid_z, cutoff_z)
+                z_right = min(self.grid_num-grid_z-1, cutoff_z)
+                sgrid = np.copy(kernel[origin-x_left : origin+x_right+1,
+                                       origin-y_left : origin+y_right+1,
+                                       origin-z_left : origin+z_right+1])
+                sgrid_no_boundary = np.copy(kernel[origin-cutoff_x:origin+cutoff_x+1,
+                                                   origin-cutoff_y:origin+cutoff_y+1,
+                                                   origin-cutoff_z:origin+cutoff_z+1])
+                sgrid /= np.sum(sgrid_no_boundary)  ## Normalization for conservation
+                sgrid *= masses[ptype]/self.grid_len**3
+                density3D[grid_x-x_left : grid_x+x_right+1,
+                          grid_y-y_left : grid_y+y_right+1,
+                          grid_z-z_left : grid_z+z_right+1] += sgrid*pnum
+    
+        ## Plot for every projected planes
+        for x_axis, y_axis in axes:
+            ## Construct density matrix in projected plane
             density = np.zeros((self.grid_num, self.grid_num))
-            for ptype in self.ptype_exist:
-                summing_axis = 3-x_axis-y_axis
-                projected_data = np.sum(self.NumPart[ptype], axis=summing_axis)
-                density += projected_data
+            summing_axis = 3-x_axis-y_axis
+            density = np.sum(density3D, axis=summing_axis)
             density = density.T/grid_volume
+
             ## Plot contour
             ## Choose this when you do not know the exact scale
             fig, ax = plt.subplots(figsize=(12,10))
@@ -452,14 +525,14 @@ class HashTables:
 
 ## Select model
 sdir = "/home/du/gizmo/TestGas/Test_Gas_Generation/results"
-#snum = 10
-#hash_tables = HashTables(sdir, snum, grid_num=51)
+snum =25
+hash_tables = HashTables(sdir, snum, grid_num=51)
 #hash_tables.plot_particles(ptype_list=[2,1,0,4], axes=(0,1), trackID=200500)
-#hash_tables.plot_density_contour(ptype_list=[0,1,2,4], axes=(0,1))
-#del hash_tables
+hash_tables.plot_density_contour(ptype_list=[0,1,2,4], axes=(0,1))
+del hash_tables
 
-snum_list = np.arange(0, 40, 1)
-for snum in snum_list:
-    hash_tables = HashTables(sdir, snum, grid_num=51)
-    hash_tables.plot_particles(ptype_list=[2,1,0,4], axes=(0,1), trackID=200500)   
-    del hash_tables
+#snum_list = np.arange(0, 40, 1)
+#for snum in snum_list:
+#    hash_tables = HashTables(sdir, snum, grid_num=51)
+#    hash_tables.plot_particles(ptype_list=[2,1,0,4], axes=(0,1), trackID=200500)   
+#    del hash_tables
