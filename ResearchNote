@@ -421,3 +421,38 @@ Density contour 구할 때 kernel function 활용하는 코드 제작
  - 다만 halo particle의 경우 kernel length가 너무 커서 3D grid의 경우 메모리에러 발생
  - 추후 cubic spline kernel로 바꿀 예정 - 관련 문서 찾는 중
 
+------------------------2020. 03. 07 ~ 2020. 03. 08 주말-----------------------
+
+"Galaxie in the Universe" 공부
+ - Chap 2.1~2.2
+
+---------------------------------2020. 03. 09----------------------------------
+
+2020. 02. 25, 2020. 02. 28에 돌린 모델 간단하게 확인
+ - Model Bar1에서만 bar가 형성되고 나머지는 bar 형성이 안됨
+  -> Bulge existence가 bar formationd에 큰 영향을 미치는 듯
+  -> 초반 spiral structure는 모든 은하에서 관찰됨
+ - Feedback (GALSF_EFFECTIVE_EQS, GALSF_SUBGRID_WINDS) 넣은 모델은 SF가 매우 낮음
+  -> 다른 physics 유무와 관계없이 SFR이 극도로 낮음 (거의 0에 근점)
+  -> 약 0.5Gyr이 지나서야 매우 낮은 SFR (order of 0.1 M_sun/yr)
+  -> GADGET-2/3, APERO 등의 default라는데, 이러한 행동이 맞는지는 더 검증 필요
+ - COOL_LOW_TEMPERATURES는 SFR을 특히 초반에 급격하게 증가시킴
+  -> 최종적으로 ptype4의 갯수는 초기 ptype0이 약 80% 정도가 됨
+  -> 반면 이 flag가 없는 경우 약 60%
+  -> 어느 정도는 예상된 바
+ - GALSF_SFR_MOLECULAR_CRIETRION, GALSF_SFR_VIRIAL_SF_CRITERION=0는 큰 효과 없었음
+  -> 다만 가장 처음에 SFR을 0으로 만들어줌
+  -> 그 이후에는 다른 모델과 차이가 없었고, 최종적인 결과는 비슷함
+ - ADAPTIVE_GRAV_FORGAS, ADAPTIVE_GRAV_FORALL=3의 효과는 판단 불가
+  -> Star formation은 feedback으로 인해 거의 0
+  -> 외형적인 bar evolution은 다른 모델과는 큰 차이가 없었음
+  -> Feedback을 넣지 않은 모델을 대조군으로 새로 돌려야 할 듯
+
+2020. 02. 25, 2020. 02. 28의 모델과 더불어, 각 은하 별로 새로운 모델 4개 추가
+ 12. 4 + ADAPTIVE_GRAV_FORGAS
+ 13. 12 + COOL_LOW_TEMPERATURES
+ 14. 4 + ADAPTIVE_GRAV_FORALL=3
+ 15. 14 + COOL_LOW_TEMPERATURES
+ (Adaptive gravitation model에서 feedback이 없는 모델들)
+
+Bash shell scripting 개선 후 총 60개 모델 돌리기 시작 - 일주일 걸릴 듯?
