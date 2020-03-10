@@ -456,3 +456,15 @@ Density contour 구할 때 kernel function 활용하는 코드 제작
  (Adaptive gravitation model에서 feedback이 없는 모델들)
 
 Bash shell scripting 개선 후 총 60개 모델 돌리기 시작 - 일주일 걸릴 듯?
+
+---------------------------------2020. 03. 10----------------------------------
+
+TreePM algorithm 복습
+ - Bagla, J. S., 1999: 전체
+
+SPH 방법 공부
+ - Dutto, P., 2014: section 5-1 ~ 5-4 읽음
+
+plot_density_contour에 Gaussian kernel 대신 cubic spline kernel 적용
+ - 다만 속도 향상 기법은 조금 더 연구해야 할 듯
+ - numpy를 이용해서 속도 향상을 꾀했으나, 잘 되지 않음

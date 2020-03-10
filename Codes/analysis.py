@@ -624,7 +624,7 @@ def plot_density_contour(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
     for size in sizes:
 
         ## Create meshgrid to plot contour
-        grid_num = 51
+        grid_num = 4001
         x_grid = np.linspace(-size, size, grid_num, endpoint=True)
         y_grid = np.linspace(-size, size, grid_num, endpoint=True)
         X, Y = np.meshgrid(x_grid, y_grid)
@@ -641,46 +641,63 @@ def plot_density_contour(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
                 ## For Kernel Estimation
                 sigma = np.std(data[:,[x_axis,y_axis]], axis=0)
                 h = sigma*len(data)**(-1/6)  ## Silverman's rule in 2D
+                ## Arbitrarily decrease bandwidth
+                ## For observing central dense region
+                resolution = 2  ## Arbitrary number!
+                h /= resolution
+                h1, h2 = h[x_axis], h[y_axis]
                 index = np.where((abs(data[:,x_axis])<size) & (abs(data[:,y_axis])<size))
                 data = data[index]
-                ## Construct kernel matrix
-                cutoff_intensity = 0.1
-                ## Kernel should include every elements where the elements
-                ## are bigger than 0.1 * origin value
-                kernel_len = math.ceil(max(h)/grid_len*(-2*np.log(cutoff_intensity))**(1/2))
-                kernel = np.ones((kernel_len*2+1, kernel_len*2+1))
-                origin = kernel_len
-                print(np.shape(kernel))
-                for j in range(origin):
-                    kernel[j] *= np.exp(-((j-origin)*grid_len/h[0])**2)
-                kernel[origin+1:] = np.flip(kernel[:origin], axis=0)
-                for j in range(origin):
-                    kernel[:,j] *= np.exp(-((j-origin)*grid_len/h[1])**2)
-                kernel[:,origin+1:] = np.flip(kernel[:,:origin], axis=1)
-                kernel /= np.sum(kernel)  ## Normalization
-                ## Decide limit of grid that will be included in the kernel
-                ## When the value of kernel function at a grid is smaller than
-                ## kernel function at origin * cutoff_intensity, do not include
-                cutoff_x = math.ceil(h[0]/grid_len*(-2*np.log(cutoff_intensity))**(1/2))
-                cutoff_y = math.ceil(h[1]/grid_len*(-2*np.log(cutoff_intensity))**(1/2))
-                if cutoff_x > grid_num: cutoff_x = grid_num
-                if cutoff_y > grid_num: cutoff_y = grid_num
+                ## Construct matrix that stores the value of kernel function
+                ## Kernel function: Cubic spline
+                kernel_len_x = int(2*h1/grid_len)
+                kernel_len_y = int(2*h2/grid_len)
+                print('ptype %d kernel length: %d, %d' %(ptype, kernel_len_x, kernel_len_y))
+                
+#                 I try to use numpy module as much as possible for performance
+#                 First construct 3 matrices which stores the value of cubic
+#                 spline kernel in each domain
+#                 In this code, kernel_temp[0]: for 0<=q<1
+#                               kernel_temp[1]: for 1<=q<2
+#                               kernel_temp[2]: for 2<=q
+#                 Then pile up them into 3D array and sort each element and
+#                 pick medium value - then it is cubic spline kernel.
+#                kernel_temp = np.zeros((3, kernel_len_x*2+1, kernel_len_y*2+1))
+#                for j in range(len(kernel_temp[0])):
+#                    for k in range(len(kernel_temp[0,j])):
+#                        kernel_temp[0,j,k] = (((j-kernel_len_x)/h1)**2
+#                                              + ((k-kernel_len_y)/h2)**2)**(1/2)
+#                kernel_temp[0] *= grid_len
+#                kernel_temp[1] = 4*(2-kernel_temp[0])**3
+#                kernel_temp[0] = 1-3/2*kernel_temp[0]**2+3/4*kernel_temp[0]**3
+#                kernel_temp = np.sort(kernel_temp, axis=0)
+#                kernel = kernel_temp[1]
+                kernel = np.zeros((kernel_len_x*2+1, kernel_len_y*2+1))
+                for j in range(len(kernel)):
+                    for k in range(len(kernel[0])):
+                        temp = grid_len*(((j-kernel_len_x)/h1)**2
+                                         + ((k-kernel_len_y)/h2)**2)**(1/2)
+                        if temp > 2:
+                            kernel[j,k] = 0
+                        elif temp > 1:
+                            kernel[j,k] = (2-temp)**3
+                        else:
+                            kernel[j,k] = 4*(1-3/2*temp**2+3/4*temp**3)
+                
+              
                 ## Assign particles to grid points and construct density
-                print(cutoff_x, cutoff_y)
                 data += size + size/grid_num/2
                 for particle in data:
                     grid_x = int(particle[x_axis]//grid_len)
                     grid_y = int(particle[y_axis]//grid_len)
                     ## Boundaries
-                    x_left = min(grid_x, cutoff_x)
-                    x_right = min(grid_num-grid_x-1, cutoff_x)
-                    y_left = min(grid_y, cutoff_y)
-                    y_right = min(grid_num-grid_y-1, cutoff_y)
-                    sgrid = np.copy(kernel[origin-x_left : origin+x_right+1,
-                                           origin-y_left : origin+y_right+1])
-                    sgrid_no_boundary = np.copy(kernel[origin-cutoff_x:origin+cutoff_x+1,
-                                                       origin-cutoff_y:origin+cutoff_y+1])
-                    sgrid /= np.sum(sgrid_no_boundary)  ## Normalization for conservation
+                    x_left = min(grid_x, kernel_len_x)
+                    x_right = min(grid_num-grid_x-1, kernel_len_x)
+                    y_left = min(grid_y, kernel_len_y)
+                    y_right = min(grid_num-grid_y-1, kernel_len_y)
+                    sgrid = np.copy(kernel[kernel_len_x-x_left : kernel_len_x+x_right+1,
+                                           kernel_len_y-y_left : kernel_len_y+y_right+1])
+                    sgrid /= np.sum(kernel)  ## Normalization for conservation
                     sgrid *= masses[ptype]/grid_len**3
                     density[grid_x-x_left : grid_x+x_right+1,
                             grid_y-y_left : grid_y+y_right+1] += sgrid
