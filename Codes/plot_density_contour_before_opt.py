@@ -14,9 +14,9 @@ from analysis import load_data
 
 
 ## In analysis.py I optimized this function (although fundamental algorithm
-## is the smae). It is about 25*(grid_num/100) times faster after optimization
-## when contour includes halo particles. When the contour does not incldue
-## halo particles, that it is about 2.5 times faster.
+## is the smae). It is about 0.25*grid_num times faster after optimization
+## when grid_num is bigger than 100 and contour includes halo particles.
+## When the contour does not incldue halo particles, about 2.5 times faster.
 ## I just saved the priomoridal version of the function for future reference.
 def cubic_spline_kernel(sdir, snum, ptype_list=[0,1,2,3,4,5],
                         sizes=[10.], axes=[(0,1),(0,2),(1,2)], save=False):

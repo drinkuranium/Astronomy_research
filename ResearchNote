@@ -508,3 +508,21 @@ plot_density_contour 오류 해결
  - 이전 코드는 목표 크기 밖의 particle은 전혀 고려하지 않음
  - 그러나 이 particle도 kernel function을 통해 목표 지점에 영향을 줄 수 있음
  - data에 영향을 줄 수 있는 particle도 포함하도록 변경
+ 
+---------------------------------2020. 03. 13----------------------------------
+
+plot_density_contour 메모리 최적화 및 속도 향상
+ - contour size를 줄이면 halo particle의 kernel matrix의 크기는 비례하여 커짐
+ - 너무 contour size를 줄이면 memory 할당 문제 발생
+ - 메모리 최적화 필요
+  -> 실행 중간에 필요없는 variable을 del을 통해 deallocate
+  -> numpy matrix의 dtype을 single precision으로 변경
+ - Single precision 변경은 정확도를 손상시킴
+  -> Maximum fractional error ~ 1e-5 정도로, 일반적인 분석에서는 상관 없음
+  -> 정확한 분석을 요할 시 코드 내에서 float64로 변경 필요
+ - Single precision 변경을 통해 속도 향상도 이뤄냄
+ - Half precision으로의 변경은 좋지 않음
+  -> Error가 너무 큼
+  -> IA가 PF-16을 지원하지 않아 오히려 속도도 느림
+
+메모리 최적화 도중에 Python이 어떻게 memory manage를 하는지 파악

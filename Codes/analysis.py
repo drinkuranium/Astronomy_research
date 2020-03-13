@@ -590,7 +590,7 @@ def plot_density_contour(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
         it will be treated as a list of length 1.
 
       sizes (int, float list or int, float): The size of the plot in code unit
-        (nomarlly kpc - but inspect your setting!). Default value is 10,
+        (nomarlly kpc - but inspect your GIZMO setting!). Default value is 10,
         recommended for observing disk and bulge structures. If an user
         specifies this by passing a float number list, then it will only
         repeatedly plot the density contour within the size specified by each
@@ -666,12 +666,17 @@ def plot_density_contour(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
 
         for x_axis, y_axis in axes:       
 
+            ## Using float32 instead of float64 results in maximum ~1e-5 of
+            ## fractional error in the final result.
+            ## For strict analysis use float64, but nomrally float32 is enough.
+            my_dtype = np.float32
             ## Density of each grid
-            density = np.zeros((grid_num, grid_num))
+            density = np.zeros((grid_num, grid_num), dtype=my_dtype)
             
             ## Remove data out of the contour domain 
             for i in range(len(ptype_exist)):
                 ptype, data = ptype_exist[i], data_list[i]
+                print("ptype%d" %ptype)
                 ## For Kernel Estimation
                 sigma = np.std(data[:,[x_axis,y_axis]], axis=0)
                 h = sigma*len(data)**(-1/6)  ## Silverman's rule in 2D
@@ -683,58 +688,56 @@ def plot_density_contour(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
                 ## Construct matrix that stores the value of kernel function
                 ## Kernel function: Cubic spline
                 origin_x = int(2*h1/grid_len)
-                origin_y = int(2*h2/grid_len)                
+                origin_y = int(2*h2/grid_len)
+                ## Regulate memory by reducing kernel size if it is too big
+                memory = 5*(origin_x+1)*(origin_y+1)*(sys.getsizeof(my_dtype())-24) ## Predicted maximum allocation memory
+                maximum_memory = 24*1024**3  ## Allocation memory limit
+                if memory > maximum_memory:
+                    reduce_factor = (maximum_memory/memory)**(1/2)
+                    h1 *= reduce_factor
+                    h2 *= reduce_factor
+                    origin_x = int(2*h1/grid_len)
+                    origin_y = int(2*h2/grid_len)
+                    print("Program requires too much memory. Kernel is too large.")
+                    print("Reducing kernel size by %.4f..." % reduce_factor)
+                    print("Results can be inaccurate.")
+                    print("To avoid this, reduce grid number or expand plot area.")
                 ## I try to use numpy module as much as possible for performance
                 ## First construct 3 matrices which stores the value of cubic
                 ## spline kernel in each domain
-                ## In this code, kernel_temp[0]: for 0<=q<1
-                ##               kernel_temp[1]: for 1<=q<2
-                ##               kernel_temp[2]: for 2<=q
+                ## In this code, kernel_temp0: for 0<=q<1
+                ##               kernel_temp1: for 1<=q<2
+                ##               kernel_temp2: for 2<=q
                 ## Then pile up them into 3D array and sort each element, then
                 ## pick medium value - then it becomes cubic spline kernel.
-                a = time.time()
+                time_measure1 = time.time()
                 ## First, construct only a quarter of kernel matrix
-                kernel_temp = np.zeros((3, origin_x+1, origin_y+1))
-                ## Here I tried to use numpy as much as possible, though it looks ugly
-                ## Essential for large kernel particles like halo particles!
-                x = np.outer(np.arange(0, origin_x+1, 1),
-                             np.ones(origin_y+1))
-                y = np.outer(np.ones(origin_x+1),
-                             np.arange(0, origin_y+1, 1))
-                kernel_temp[0] = ((x/h1)**2 + (y/h2)**2)**(1/2)
-                kernel_temp[0] *= grid_len
-                kernel_temp[1] = (2-kernel_temp[0])**3
+                x = np.outer(np.arange(0, origin_x+1, 1, dtype=my_dtype),
+                             np.ones(origin_y+1, dtype=my_dtype))
+                y = np.outer(np.ones(origin_x+1, dtype=my_dtype),
+                             np.arange(0, origin_y+1, 1, dtype=my_dtype))
+                q = np.zeros(1, dtype=my_dtype)  ## Declear dtype first for memory
+                q = grid_len*((x/h1)**2 + (y/h2)**2)**(1/2)
+                del(x, y)  ## Some objects require too big memory, so free them
+                kernel_temp = np.zeros((3, origin_x+1, origin_y+1), dtype=my_dtype)
+                kernel_temp[1] = (2-q)**3
                 ## Faster than just 4-6*kernel_temp[0]**2+3*kernel_temp[0]**3
-                kernel_temp[0] = -3*kernel_temp[1]+12*(kernel_temp[0]-1.5)**2+1
-                kernel_temp = np.sort(kernel_temp, axis=0)
-                kernel_quarter = kernel_temp[1]
+                kernel_temp[0] = -3*kernel_temp[1]+12*(q-1.5)**2+1
+                del(q)
+                kernel_temp = np.sort((kernel_temp), axis=0)
+                kernel_quarter = np.copy(kernel_temp[1])
+                del(kernel_temp)
                 ## Construct full kernel matrix using symmetry to origin
-                kernel = np.zeros((origin_x*2+1, origin_y*2+1))
+                kernel = np.zeros((origin_x*2+1, origin_y*2+1), dtype=my_dtype)
                 kernel[origin_x:, origin_y:] = kernel_quarter
                 kernel[:origin_x+1, :origin_y+1] = np.flip(kernel_quarter, (0,1))
                 kernel[origin_x+1:, :origin_y] = np.flip(kernel_quarter[1:,1:], 1)
                 kernel[:origin_x, origin_y+1:] = np.flip(kernel_quarter[1:,1:], 0)
-                print("ptype%d" %ptype)
                 print("Kernel matrix shape:", np.shape(kernel))
-
-                ## Use commented code for memory efficiency - but much slower
-                ## (especially for halo particles, which need large kernel)
-#                kernel = np.zeros((origin_x*2+1, origin_y*2+1))
-#                for j in range(len(kernel)):
-#                    for k in range(len(kernel[0])):
-#                        temp = grid_len*(((j-origin_x)/h1)**2
-#                                         + ((k-origin_y)/h2)**2)**(1/2)
-#                        if temp > 2:
-#                            kernel[j,k] = 0
-#                        elif temp > 1:
-#                            kernel[j,k] = (2-temp)**3
-#                        else:
-#                            kernel[j,k] = 4*(1-3/2*temp**2+3/4*temp**3)
-
                 kernel /= np.sum(kernel)  ## Normalization for conservation
                 kernel *= masses[ptype]/grid_len**2  ## Assign density
-                b = time.time()
-                print("Kernel construction time:", b-a)
+                time_measure2 = time.time()
+                print("Kernel construction time:", time_measure2-time_measure1)
 
                 ## Since kernel function applied, even particles which are not
                 ## in the target region can affect density. So I need to
@@ -752,12 +755,11 @@ def plot_density_contour(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
                 ## When you choose opt=True, assign particles to the mesh
                 ## then multiply kernels to each grid point of the mesh
                 if opt:
-                    particle_mesh = np.zeros_like(density)
+                    particle_mesh = np.zeros((grid_num+2*origin_x, grid_num+2*origin_y))
                     for i in range(len(grid_x)):
-                        particle_mesh[grid_x[i], grid_y[i]] += 1
+                        particle_mesh[grid_x[i]+origin_x, grid_y[i]+origin_y] += 1
                     nonzero_mesh = np.where(particle_mesh > 0)
-                    grid_x, grid_y = nonzero_mesh[0], nonzero_mesh[1]
-
+                    grid_x, grid_y = nonzero_mesh[0]-origin_x, nonzero_mesh[1]-origin_y
                 origin_x_array = origin_x*np.ones_like(grid_x)
                 origin_y_array = origin_y*np.ones_like(grid_y)
                 ## Consider boundaries and set limit of kernel approapriately
@@ -770,16 +772,20 @@ def plot_density_contour(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
                                    origin_y-y_left[j] : origin_y+y_right[j]+1]
                     ## For opt=True, number of particle in each grid must be considered.
                     if opt:
-                        pnum = particle_mesh[grid_x[j], grid_y[j]]
+                        pnum = particle_mesh[grid_x[j]+origin_x, grid_y[j]+origin_y]
                         density[grid_x[j]-x_left[j] : grid_x[j]+x_right[j]+1,
                                 grid_y[j]-y_left[j] : grid_y[j]+y_right[j]+1] += sgrid*pnum
                     else:
                         density[grid_x[j]-x_left[j] : grid_x[j]+x_right[j]+1,
                                 grid_y[j]-y_left[j] : grid_y[j]+y_right[j]+1] += sgrid
-                print("Particle assign time:", time.time()-b)
-            density = density.T        
+                del(sgrid, kernel, kernel_quarter)
+                print("Particle assign time:", time.time()-time_measure2,
+                      "(particle number: %d)\n" % len(data))
+
+            density = density.T
+
             ## Plot contour
-            fig, ax = plt.subplots(figsize=(12,10))
+            fig, ax = plt.subplots(figsize=(12,9.9))
             plt.axis('equal')
             contour = plt.contourf(X, Y, density, 40)
             fig.colorbar(contour)
@@ -804,8 +810,7 @@ def plot_density_contour(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
 
             plt.show()
 
-    return None
-
+    return density
 
 def sersic_profile(r, I_e, R_e, n):
     """Compute luminosity by using Sersic profile
@@ -1170,7 +1175,7 @@ snum = 15
 
 ## Plot the density contours
 a = time.time()
-plot_density_contour(sdir, snum, ptype_list=[0,1,2,4], sizes=[10], axes=(0,1), save=False, opt=False)
+density = plot_density_contour(sdir, snum, ptype_list=[1], sizes=[0.8], axes=(0,1), save=False, opt=False)
 print(time.time()-a)
 ## Fit the luminosity curve to Sersic profile
 #sersic_fitting(sdir, snum, axes=(0,1))
