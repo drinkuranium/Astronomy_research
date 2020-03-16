@@ -183,7 +183,7 @@ def load_from_snapshot(value,ptype,sdir,snum,particle_mask=np.zeros(0),axis_mask
                 return 0
             # read in, now attempt to parse. first check for needed information on particle number
             npart = file["Header"].attrs["NumPart_ThisFile"]
-            if(npart[ptype] > 1):
+            if(npart[ptype] >= 1):
                 # return particle key data, if requested
                 if((value=='keys')|(value=='Keys')|(value=='KEYS')): 
                     q = file['PartType'+str(ptype)].keys()
@@ -677,9 +677,17 @@ def plot_density_contour(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
             for i in range(len(ptype_exist)):
                 ptype, data = ptype_exist[i], data_list[i]
                 print("ptype%d" %ptype)
-                ## For Kernel Estimation
-                sigma = np.std(data[:,[x_axis,y_axis]], axis=0)
-                h = sigma*len(data)**(-1/6)  ## Silverman's rule in 2D
+                ## Compute bandwidth
+                if ptype == 4 and len(data) < 100:
+                    ## Sometimes SFR is so low, so number of ptype4 can be
+                    ## very small. In this case, use gas data together.
+                    gas_data = data_list[np.where(np.array(ptype_exist)==0)][0]
+                    gas_data = np.vstack((gas_data, data))
+                    sigma = np.std(gas_data[:,[x_axis,y_axis]], axis=0)
+                    h = sigma*len(gas_data)**(-1/6)  ## Silverman's rule in 2D
+                else:
+                    sigma = np.std(data[:,[x_axis,y_axis]], axis=0)
+                    h = sigma*len(data)**(-1/6)  ## Silverman's rule in 2D
                 ## Arbitrarily decrease bandwidth
                 ## To avoid over-smoothing central dense region
                 resolution = 2  ## Arbitrary number! - Rule of thumb is 2
@@ -885,17 +893,16 @@ def sersic_fitting(sdir, snum, axes=[(0,1)], ptype_list=[0,1,2,3,4,5]):
     ## So Sersic fitting of those components are fairly easy
     ptype_name = ["Halo", "Bulge"]
     for i in range(len(ptype_name)):
-        for axis in axes:
+        for x_axis, y_axis in axes:
             ptype = 2*i+1
             ## Continue to next ptype if ptype does not exist
             if ptype not in ptype_exist:
                 break
-            ptype_index = np.where(ptype_exist == ptype)
+            ptype_index = np.where(np.array(ptype_exist) == ptype)[0][0]
             data = data_list[ptype_index]
-            print(np.shape(data))
                 
             ## Compute R_e, where half of the particles reside inside
-            R = (data[:,axis[0]]**2 + data[:,axis[1]]**2)**(1/2)
+            R = (data[:,x_axis]**2 + data[:,y_axis]**2)**(1/2)
             R = np.sort(R)
             R_len = len(R)
             ## Effective radius can be computed directly by sorting R
@@ -929,9 +936,9 @@ def sersic_fitting(sdir, snum, axes=[(0,1)], ptype_list=[0,1,2,3,4,5]):
             I_e = luminosity[R_e_index]
         
             ## Find best 'n' value by using least square method
-            initial_guess = [I_e, R_e, 1]
+            initial_guess = [I_e, R_e, 4]
             popt, pcov = curve_fit(sersic_profile, r_domain[1:], np.log10(luminosity[1:]),
-                                   p0=initial_guess, bounds=([I_e*0.98,R_e*0.981,0.1],[I_e*1.02,R_e*1.02,20]))
+                                   p0=initial_guess, bounds=([I_e*0.98,R_e*0.98,0.1],[I_e*1.02,R_e*1.02,20]))
             ## Exclude the first element, since it incorporate large error
             print("%s - Effective radius: %.3f kpc, Sersic index: %.2f" % (ptype_name[ptype], popt[1], popt[2]))
         
@@ -945,6 +952,87 @@ def sersic_fitting(sdir, snum, axes=[(0,1)], ptype_list=[0,1,2,3,4,5]):
             plt.title("%s Sersic profile fitting" % ptype_name[ptype])
             plt.legend()
             plt.show()
+    
+    ## For disk Sersic fitting, gas and newly formed stars should be included
+    ## Fist examine existence of disk
+    disk_ptypes = [0,2,4]
+    for ptype in disk_ptypes:
+        if ptype not in ptype_exist:
+            disk_ptypes.remove(ptype)
+    print(disk_ptypes)
+    
+    if len(disk_ptypes) > 0:
+        ## Constuct data list including every disk ptypes and their masses
+        data = np.array([-1,-1,-1,-1])  ## Just initialization, will be removed
+        for ptype in disk_ptypes:
+            ptype_index = np.where(np.array(ptype_exist)==ptype)[0][0]
+            data_one_ptype = data_list[ptype_index]
+            mass_one_ptype = np.ones_like(data_one_ptype[:,0])*masses[ptype_index]
+            data_one_ptype = np.hstack((data_one_ptype, mass_one_ptype[:,None]))
+            data = np.vstack((data, data_one_ptype))
+        data = np.delete(data, 0, axis=0)
+        
+        for x_axis, y_axis in axes:
+            ## Compute R_e, where half of the particles reside inside
+            R = (data[:,x_axis]**2 + data[:,y_axis]**2)**(1/2)
+            mass = data[:,3]
+            ind = np.argsort(R, axis=0)
+            R = np.take_along_axis(R, ind, axis=0)
+            mass = np.take_along_axis(mass, ind, axis=0)
+            half_mass = np.sum(mass)/2
+            mass_within_R = 0
+            for i in range(len(R)):
+                mass_within_R += mass[i]
+                if mass_within_R > half_mass:
+                    break
+            ## Interplate to compute R_e
+            R_e = R[i] - (R[i]-R[i-1])*(mass_within_R-half_mass)/mass[i]
+
+            ## Divide r domain so that each r grid contains certain number of particles
+            particle_cutoff = int(len(R)*0.95)  ## Exclude outliers
+            resolution = 100
+            particle_per_grid = int(particle_cutoff//resolution)
+            r_domain_index = np.arange(0, particle_cutoff+1, particle_per_grid)
+            r_domain = R[r_domain_index]
+        
+            ## Compute luminosity (=particle number density) as a function of R
+            density = np.zeros(len(r_domain)-1)
+            for i in range(len(density)):
+                area = np.pi*(r_domain[i+1]**2 - r_domain[i]**2)
+                for j in range(particle_per_grid):
+                    density[i] += mass[i*particle_per_grid+j]
+                density[i] /= area
+            luminosity = np.zeros_like(r_domain)
+            for j in range(len(luminosity)-2):
+                luminosity[j+1] = (density[j]+density[j+1])/2
+            luminosity[0] = luminosity[1] + (luminosity[1]-luminosity[2])
+            luminosity[-1] = luminosity[-2] + (luminosity[-2]-luminosity[-3])
+        
+            ## Compute I_e, luminosity at effective radius
+            for j in range(len(r_domain)):
+                if not R_e > r_domain[j]:
+                    R_e_index = j
+                    break
+            I_e = luminosity[R_e_index]
+        
+            ## Find best 'n' value by using least square method
+            initial_guess = [I_e, R_e, 1]
+            popt, pcov = curve_fit(sersic_profile, r_domain[1:], np.log10(luminosity[1:]),
+                                   p0=initial_guess, bounds=([I_e*0.98,R_e*0.98,0.1],[I_e*1.02,R_e*1.02,20]))
+            ## Exclude the first element, since it incorporate large error
+            print("Disk - Effective radius: %.3f kpc, Sersic index: %.2f" % (popt[1], popt[2]))
+        
+            ## To find best fit in non-log scale, uncomment below line
+            #popt, pcov = curve_fit(sersic_profile, r_domain[1:], luminosity[1:], p0=initial_guess, bounds=([1,R_e*0.99,0.1],[np.inf,R_e*1.01,20]))
+            plt.plot(r_domain[1:], luminosity[1:], 'b-', label='Luminosity')
+            plt.plot(r_domain[1:], 10**sersic_profile(r_domain[1:], *popt), 'r-', label='Sersic fit')
+            plt.yscale('log')
+            plt.xlabel('R (kpc)')
+            plt.ylabel('Luminosity')
+            plt.title("Disk Sersic profile fitting")
+            plt.legend()
+            plt.show()
+
 
     return None
 
@@ -1167,18 +1255,18 @@ def plot_mass_vs_radius_2D(sdir, snum, radius, axes=[(0,1),(0,2),(1,2)],
                   specify the plane by pairing axis like (0,2), in case of yz-plane.")
 
 ## Select model
-sdir = "/home/du/gizmo/TestGas/Test_Gas_Generation/results"
-snum = 15
+sdir = "/home/du/gizmo/TestGas/Model_Bar1/OnlyGrav/results"
+snum = 10
 
 ## Plot the locations of the particles
 #plot_particles(sdir, snum, ptype_list=[0,2,4], sizes=[10], axes=(0,1), save=False)
 
 ## Plot the density contours
-a = time.time()
-density = plot_density_contour(sdir, snum, ptype_list=[1], sizes=[0.8], axes=(0,1), save=False, opt=False)
-print(time.time()-a)
+#a = time.time()
+#density = plot_density_contour(sdir, snum, ptype_list=[0,2,4], sizes=[10], axes=(0,1), save=False, opt=False)
+#print(time.time()-a)
 ## Fit the luminosity curve to Sersic profile
-#sersic_fitting(sdir, snum, axes=(0,1))
+sersic_fitting(sdir, snum, axes=(0,1))
 
 ## Conduct Fourier analysis of the density of the disk to investigate bar and spiral structures
 #azimuthal_structure(sdir, snum)
