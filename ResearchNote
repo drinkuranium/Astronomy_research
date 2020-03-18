@@ -550,3 +550,24 @@ Sersic_fitting 수정
  - Disk fitting 시 ptype0, 2, 4를 모두 포함하도록 수정
  - 각 ptype마다 mass가 다른 것도 고려하도록 수정
 
+ 
+---------------------------------2020. 03. 17----------------------------------
+
+load_data 수정
+ - CM correction에도 불구하고 Origin이 정확히 galactic center와 일치하지 않음
+ - Densith maxima로 galactic center를 찾는 코드 추가
+ - Density matrix contruction까지 작성했으나 debugging 필요함
+
+---------------------------------2020. 03. 18----------------------------------
+
+load_data 수정
+ - 어제 작성하던 코드 이어 작성하여 완성
+ - 안정된 은하로 진화한 경우 은하 중심을 상당히 잘 찾음
+  -> 그러나 여전히 Fourier transform은 이해할 수 없는 값이 나옴
+  -> Galactic center의 문제인지, Kernel estimation의 필요성인지 불확실
+  -> Kernel estimation을 적용한 뒤 추가 논의 필요할 듯
+ - 초기 불안정한 경우 galactic center를 잘 찾지 못함
+  -> Density maxima가 여러 곳에 형성
+  -> 몇몇 경우 은하 중심이 아닌 곳이 더 density가 높은 경우 발생
+  -> Potential을 찾는 경우도 비슷한 오류가 생길 것으로 추정
+  -> 블랙홀을 쓰거나, 완전히 다른 알고리즘이 필요할 듯
