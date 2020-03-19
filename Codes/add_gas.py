@@ -252,7 +252,7 @@ def add_gas(sdir, snum, ngas, gas_frac, T_gas):
     return None
 
 
-def make_gas_equilibrium(sdir, model_name, core_num):
+def make_gas_equilibrium_short_evolution(sdir, model_name, core_num):
     """This subroutine create a directory under /home/du/gizmo/GasMaker whose
     name is given by the model name. Then it moves the output IC (HDF5) file
     of the add_gas function the created directory and also copies GIZMO into
@@ -278,17 +278,116 @@ def make_gas_equilibrium(sdir, model_name, core_num):
     ## Just like bash scripting!
     cwd = os.getcwd()
     wd = '/home/du/gizmo/GasMaker/'+model_name
-    os.system('cp -r /home/du/gizmo/GasMaker/gizmo-gasmaker '+wd)
-    os.system('mv '+sdir+'/gas_added.hdf5 '+wd+'/gas_added.hdf5')
+    os.system('rm -r '+wd)
+    os.system('cp -r -f /home/du/gizmo/GasMaker/gizmo-gasmaker '+wd)
+    os.system('cp '+sdir+'/gas_added.hdf5 '+wd+'/gas_added.hdf5')
     os.chdir(wd)
-    os.system('mpiexec -np %d ./GIZMO gasmaker.params' %core_num)
+    os.system('mpiexec -np %d ./GIZMO short_evolution.params' %core_num)
     os.system('cp results/snapshot_010.hdf5 '+model_name+'_gas_added.hdf5')
     os.chdir(cwd)
     
     return None
 
 
-def check_gas_velocity(model_name):
+def make_gas_equilibrium_evolve_gas_only(sdir, model_name, core_num, end_time):
+    """This subroutine create a directory under /home/du/gizmo/GasMaker whose
+    name is given by the model name. Then it moves the output IC (HDF5) file
+    of the add_gas function the created directory and also copies GIZMO into
+    the directory. Finally, this subroutine evolves the galaxy by GIZMO for
+    10Myr with only gravitation to make the gas particle in equilibrium.
+
+    Arguments:
+      sdir (string): parent directory of the snapshot file or immediate
+        snapshot sub-directory if it is a multi-part file
+
+      model_name (string): The name of the model, will be used as the name 
+        of the created directory.
+
+      core_num (int): The number of cores that will be used to run GIZMO
+
+      end_time (float): Gas evolution time in code unit (normally Gyr)
+
+    Raises:
+      OSError: When you try to allocate impossible number of  cores to run
+        GIZMO. Try again with lower number of cores.
+
+    Returns: None
+    """
+
+    ## Just like bash scripting!
+    cwd = os.getcwd()
+    wd = '/home/du/gizmo/GasMaker/'+model_name
+    os.system('rm -r '+wd)
+    os.system('cp -r -f /home/du/gizmo/GasMaker/gizmo-gasmaker '+wd)
+    os.system('cp '+sdir+'/gas_added.hdf5 '+wd+'/gas_added.hdf5')
+    os.chdir(wd)
+    os.system('rm -r equilibrium_test')
+    os.system('mkdir equilibrium_test')
+    
+    ## Evolve gas only by repeating: Execute GIZMO for short time
+    ## -> Create new IC file with evolved gas data and original other particle data
+    ## -> Repeat it until desired evolution time is reached
+    save_time_list = [0, 0.1, 0.15, 0.2]
+    time = 0
+    for save_time in save_time_list:
+        if abs(save_time-time) < 1e-8:
+            os.system('cp gas_added.hdf5 equilibrium_test/time_'+str(save_time)+'.hdf5')
+    while time < end_time:
+        os.system('mpiexec -np %d ./GIZMO evolve_gas_only.params' %core_num)
+        
+        ## Create new IC file with evolved gas data and original other particle data
+        sdir2 = wd+"/results"
+        new_file = wd+"/gas_added.hdf5"
+        os.system('rm '+new_file)
+        file = h5py.File(new_file, 'w')
+        ## Create header
+        h = file.create_group("Header")
+        h_values = ['NumPart_ThisFile', 'NumPart_Total', 'NumPart_Total_HighWord',
+                    'MassTable', 'Time', 'Redshift', 'BoxSize',
+                    'NumFilesPerSnapshot', 'Omega0', 'OmegaLambda', 'HubbleParam',
+                    'Flag_Sfr', 'Flag_Cooling', 'Flag_StellarAge', 'Flag_Metals',
+                    'Flag_Feedback', 'Flag_DoublePrecision', 'Flag_IC_Info']
+        for h_value in h_values:
+            h_attrs = load_from_snapshot(h_value, 0, sdir2, 0)
+            if type(h_attrs) != int or h_attrs != 0:  ## Only when attributes exist in the original file
+                h.attrs[h_value] = h_attrs
+            else:
+                print(h_value)  ## For debugging purpose
+        ptype_candidates = np.array([0,1,2,3,4,5])
+        index = np.where(h.attrs['NumPart_ThisFile'] > 0)
+        ## Create particle data
+        ptypes = ptype_candidates[index]
+        p_values = ['Coordinates', 'Velocities', 'ParticleIDs', 'Masses',
+                    'InternalEnergy']
+        for ptype in ptypes:
+            p = file.create_group("PartType"+str(ptype))
+            for p_value in p_values:
+                ## Use evolved data for gas
+                if ptype == 0:
+                    p_attrs = load_from_snapshot(p_value, ptype, sdir2, 1)
+                    if type(p_attrs) != int or p_attrs != 0:  # Only when attributes exist in the original file
+                        p.create_dataset(p_value, data=p_attrs)
+                ## Use unevolved data for other particles
+                else:
+                    p_attrs = load_from_snapshot(p_value, ptype, sdir2, 0)
+                    if type(p_attrs) != int or p_attrs != 0:  # Only when attributes exist in the original file
+                        p.create_dataset(p_value, data=p_attrs)        
+        file.close()
+        
+        time += 0.001  ## You should change this when you change tmax in parameter file
+
+        ## Save file for equilibrium analysis
+        for save_time in save_time_list:
+            if abs(save_time-time) < 1e-8:
+                os.system('cp gas_added.hdf5 equilibrium_test/time_'+str(save_time)+'.hdf5')
+
+
+    os.chdir(cwd)
+    
+    return None
+
+
+def check_gas_velocity_before_eq(sdir, model_name):
     """Check the legitimacy of the gas velocitie by plotting gas velocities
     against its position and compare it with disk.
     
@@ -300,7 +399,7 @@ def check_gas_velocity(model_name):
     """
 
     ## Load gas and disk particle's location and velocities 
-    fname = '/home/du/gizmo/GasMaker/'+model_name+'/gas_added.hdf5'
+    fname = sdir+"/gas_added1.hdf5"
     file = h5py.File(fname, 'r')
     loc_gas = np.array(file['PartType0/Coordinates/'])
     v_gas = np.array(file['PartType0/Velocities/'])
@@ -323,15 +422,18 @@ def check_gas_velocity(model_name):
 
     ## Plot gas velocity direction (only for small fraction of them)
     plt.figure(figsize=(10,10))
-    num_limit = 500
+    gas_limit = 3
+    disk_limit = gas_limit*1.1
+    num_limit = 5000
+    loc_gas = loc_gas[np.where((abs(loc_gas[:,0])<gas_limit) & (abs(loc_gas[:,1])<gas_limit))]
+    v_gas = v_gas[np.where((abs(loc_gas[:,0])<gas_limit) & (abs(loc_gas[:,1])<gas_limit))]
+    loc_disk = loc_disk[np.where((abs(loc_disk[:,0])<disk_limit) & (abs(loc_disk[:,1])<disk_limit))]
+    v_disk = v_disk[np.where((abs(loc_disk[:,0])<disk_limit) & (abs(loc_disk[:,1])<disk_limit))]
+    plt.quiver(loc_disk[:num_limit,0], loc_disk[:num_limit,1],
+               v_disk[:num_limit,0], v_disk[:num_limit,1],
+               color='k', label='Disk')
     plt.quiver(loc_gas[:num_limit,0], loc_gas[:num_limit,1],
                v_gas[:num_limit,0], v_gas[:num_limit,1], color='c', label='Gas')
-    disk_size_limit = max(loc_gas_R[:num_limit])*2
-    loc_disk_within_limit = loc_disk[np.where(loc_disk_R < disk_size_limit)]
-    v_disk_within_limit = v_disk[np.where(loc_disk_R < disk_size_limit)]
-    plt.quiver(loc_disk_within_limit[:num_limit,0], loc_disk_within_limit[:num_limit,1],
-               v_disk_within_limit[:num_limit,0], v_disk_within_limit[:num_limit,1],
-               color='k', label='Disk')
     plt.axis('equal')
     plt.title('Direction of gas particle motions (%d gas and disk particles)' %num_limit)
     plt.xlabel('x (kpc)')
@@ -425,7 +527,7 @@ def check_equilibrium(model_name, sizes=[10.], axes=[(0,1),(0,2),(1,2)]):
 
     return None
 
-model_name = "Model_Bar3"
+model_name = "Model_Bar1"
 sdir = "/home/du/gizmo/GalIC-test/"+model_name
 snum = 10
 ngas = 10000
@@ -435,16 +537,18 @@ T_gas = 10000.
 ## Actually make gas particles
 #add_gas(sdir, snum, ngas, gas_frac, T_gas)
 
-## For checking purpose
-## Order is critical due to directory structure!!
-check_gas_velocity(model_name)
-
-## Evolve IC to reach equilibrium
+## Evolve IC to reach equilibrium, choose one among 2 options
 ## Note that this is closely related to directory structure and paramter file.
 ## So if you have different directory structure or paramter file,
-## you need to change the functino appropriately.
-#core_num = 12
-#make_gas_equilibrium(sdir, model_name, core_num)
+## you need to change the function appropriately.
+#core_num = 8
+#make_gas_equilibrium_short_evolution(sdir, model_name, core_num)
+
+core_num, end_time = 8, 0.2
+make_gas_equilibrium_evolve_gas_only(sdir, model_name, core_num, end_time)
 
 ## For checking purpose
-check_equilibrium(model_name, sizes=[1.], axes=[(0,2)])
+#check_gas_velocity_before_eq(sdir, model_name)
+
+## For checking purpose
+#check_equilibrium(model_name, sizes=[1.], axes=[(0,2)])

@@ -669,7 +669,7 @@ def plot_particles(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
             ## To prevent overwritten of one data points over other data points
             ## during plot, I plot only a fraction of data at once
             markers = ['c.', 'k.', 'r.', 'b.', 'm.', 'ko']
-            markers_size = 2/size
+            markers_size = 20/size
             if markers_size < 0.1:
                 markers_size = 0.1
             ## Increase n to avoid overwrapping of plotted particles
@@ -810,7 +810,7 @@ def plot_density_contour(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
     for size in sizes:
 
         ## Create meshgrid to plot contour
-        grid_num = 41  ## Increasing bigger than 401 hardly change results
+        grid_num = 401  ## Increasing bigger than 401 hardly change results
         x_grid = np.linspace(-size, size, grid_num, endpoint=True)
         y_grid = np.linspace(-size, size, grid_num, endpoint=True)
         X, Y = np.meshgrid(x_grid, y_grid)
@@ -843,7 +843,7 @@ def plot_density_contour(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
                 ## Arbitrarily decrease bandwidth
                 ## To avoid over-smoothing central dense region
                 resolution = 2  ## Arbitrary number! - Rule of thumb is 2
-                h1, h2 = h[x_axis]/resolution, h[y_axis]/resolution
+                h1, h2 = h[0]/resolution, h[1]/resolution
 
                 ## Construct matrix that stores the value of kernel function
                 ## Kernel function: Cubic spline
@@ -951,8 +951,8 @@ def plot_density_contour(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
             fig.colorbar(contour)
 #            plt.figure(figsize=(10,10))
 #            plt.axis('equal')
-#            plt.contourf(X, Y, density, levels=np.arange(0, 1500, 25))
-#            x_label, y_label = axis_label[x_axis], axis_label[y_axis]
+#            plt.contourf(X, Y, density, levels=np.arange(0, 0.01, 0.0005))
+            x_label, y_label = axis_label[x_axis], axis_label[y_axis]
             x_label, y_label = axis_label[x_axis], axis_label[y_axis]
             plt.xlabel(x_label+" axis [kpc]")
             plt.ylabel(y_label+" axis [kpc]")
@@ -1402,34 +1402,35 @@ def plot_mass_vs_radius_2D(sdir, snum, radius, axes=[(0,1),(0,2),(1,2)],
                   specify the plane by pairing axis like (0,2), in case of yz-plane.")
 
 ## Select model
-sdir = "/home/du/gizmo/TestGas/Model_Bar1/Basic/results"
-snum = 81
+sdir = "/home/du/gizmo/GasMaker/Model_Bar1/equilibrium_test"
+#sdir = "/home/du/gizmo/TestGas/Model_Bar1/Basic/results"
+snum = 3
 
 ## Plot the locations of the particles
-#plot_particles(sdir, snum, ptype_list=[0,2,4], sizes=[10], axes=(0,1), save=False)
+#plot_particles(sdir, snum, ptype_list=[0], sizes=[10], axes=(0,1), save=True)
 
 ## Plot the density contours
 #a = time.time()
-#density = plot_density_contour(sdir, snum, ptype_list=[0,2,4], sizes=[2], axes=(0,1), save=False, opt=False)
+#density = plot_density_contour(sdir, snum, ptype_list=[0], sizes=[20], axes=(0,2), save=False, opt=False)
 #print(time.time()-a)
 
 ## Fit the luminosity curve to Sersic profile
 #sersic_fitting(sdir, snum, axes=(0,1))
 
 ## Conduct Fourier analysis of the density of the disk to investigate bar and spiral structures
-snum_list = np.arange(80, 90, 1)
-for snum in snum_list:
-    azimuthal_structure(sdir, snum)     
+#snum_list = np.arange(80, 90, 1)
+#for snum in snum_list:
+#    azimuthal_structure(sdir, snum)     
 
 ## Investigate SFR
 #max_snum = 100
 #measure_SFR(sdir, max_snum)
 
 ## Plot the evolution consequnce of the galaxy
-#snum_list = np.arange(80, 90, 1)
-#for snum in snum_list:
-#    plot_particles(sdir, snum, sizes=10, axes=[(0,1)], ptype_list=[2,1,0,4], trackID=112121, save=False)
-#    plot_density_contour(sdir, snum, sizes=[10], axes=(0,1), ptype_list=[1,2,4,0], save=False, opt=False)
+snum_list = np.arange(0,4,1)
+for snum in snum_list:
+    plot_particles(sdir, snum, sizes=10, axes=[(0,1)], ptype_list=[0], trackID=0, save=False)
+#    plot_density_contour(sdir, snum, sizes=[10], axes=(0,1), ptype_list=[0], save=False, opt=False)
 
 ## Compare rotatoin curve of disk particles and gas particls
 #dummy, loc = load_data('Coordinates', sdir, snum, [0,2])
