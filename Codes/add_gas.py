@@ -6,6 +6,7 @@ import numpy.random as nprand
 import h5py
 import matplotlib.pyplot as plt
 import os
+import sys
 from scipy.optimize import brentq
 from load_from_snapshot import load_from_snapshot
 
@@ -43,7 +44,7 @@ def R_PDF_integrated_inverse(R0, R_seed):
 
 def z_scale_height(R, z0):
     """Scale height h_z as a function of radius in code unit."""
-    return z0/3
+    return z0/2
 
 
 def z_PDF_integrated_inverse(R, z0, z_seed):
@@ -327,7 +328,7 @@ def make_gas_equilibrium_evolve_gas_only(sdir, model_name, core_num, end_time):
     ## Evolve gas only by repeating: Execute GIZMO for short time
     ## -> Create new IC file with evolved gas data and original other particle data
     ## -> Repeat it until desired evolution time is reached
-    save_time_list = [0, 0.1, 0.15, 0.2]
+    save_time_list = np.arange(0, 1.01, 0.05)
     time = 0
     for save_time in save_time_list:
         if abs(save_time-time) < 1e-8:
@@ -379,11 +380,26 @@ def make_gas_equilibrium_evolve_gas_only(sdir, model_name, core_num, end_time):
         ## Save file for equilibrium analysis
         for save_time in save_time_list:
             if abs(save_time-time) < 1e-8:
-                os.system('cp gas_added.hdf5 equilibrium_test/time_'+str(save_time)+'.hdf5')
+                os.system('cp gas_added.hdf5 equilibrium_test/time_%.3f.hdf5' %save_time)
 
+    ## Change the name of output snapshots for future analysis
+    os.chdir(wd+'/equilibrium_test')
+    snapshots = [f for f in os.listdir(os.getcwd())]
+    snapshots.sort()
+    for i in range(len(snapshots)):
+        file = snapshots[i]
+        if i < 10:
+            os.system('mv '+file+' snapshot_00%d.hdf5' %i)
+        elif i < 100:
+            os.system('mv '+file+' snapshot_0%d.hdf5' %i)
+        elif i < 1000:
+            os.system('mv '+file+' snapshot_%d.hdf5' %i)
+        else:
+            ## Code should not reach here
+            sys.exit("Too many output files. Adjust the number of output snpashots.")
 
     os.chdir(cwd)
-    
+
     return None
 
 
@@ -398,31 +414,47 @@ def check_gas_velocity_before_eq(sdir, model_name):
     Returns: None
     """
 
-    ## Load gas and disk particle's location and velocities 
-    fname = sdir+"/gas_added1.hdf5"
-    file = h5py.File(fname, 'r')
-    loc_gas = np.array(file['PartType0/Coordinates/'])
-    v_gas = np.array(file['PartType0/Velocities/'])
-    loc_disk = np.array(file['PartType2/Coordinates/'])
-    v_disk = np.array(file['PartType2/Velocities/'])
-    ## Transformation from Cartesian to cylindrical
-    loc_gas_R = np.sqrt(loc_gas[:,0]**2+loc_gas[:,1]**2)
-    v_gas_R = np.sqrt(v_gas[:,0]**2+v_gas[:,1]**2)
-    loc_disk_R = np.sqrt(loc_disk[:,0]**2+loc_disk[:,1]**2)
-    v_disk_R = np.sqrt(v_disk[:,0]**2+v_disk[:,1]**2)
-
-    ## Plot
-    plt.plot(loc_disk_R, v_disk_R, 'r.', label='Disk', markersize=1)
-    plt.plot(loc_gas_R, v_gas_R, 'b+', label='Gas', markersize=1)
-    plt.xlabel('R (kpc)')
-    plt.ylabel('v (km/s)')
-    plt.title('R vs v plot')
-    plt.legend()
-    plt.show()
+    ## Load gas and disk particle's location and velocities
+    snum_list = np.arange(0, 21, 1, dtype=int)
+    for snum in snum_list:
+        if snum < 10:
+            fname = sdir+"/snapshot_00%d.hdf5" %snum
+        else:
+            fname = sdir+"/snapshot_0%d.hdf5" %snum
+        file = h5py.File(fname, 'r')
+        loc_gas = np.array(file['PartType0/Coordinates/'])
+        v_gas = np.array(file['PartType0/Velocities/'])
+        loc_disk = np.array(file['PartType2/Coordinates/'])
+        v_disk = np.array(file['PartType2/Velocities/'])
+        ## Transformation from Cartesian to cylindrical
+        loc_gas_R = np.sqrt(loc_gas[:,0]**2+loc_gas[:,1]**2)
+        v_gas_R = np.sqrt(v_gas[:,0]**2+v_gas[:,1]**2)
+        loc_disk_R = np.sqrt(loc_disk[:,0]**2+loc_disk[:,1]**2)
+        v_disk_R = np.sqrt(v_disk[:,0]**2+v_disk[:,1]**2)
+    
+        ## Plot
+        plt.plot(loc_disk_R, v_disk_R, 'r.', label='Disk', markersize=1)
+        plt.plot(loc_gas_R, v_gas_R, 'b+', label='Gas', markersize=1)
+        plt.xlabel('R (kpc)')
+        plt.ylabel('v (km/s)')
+        plt.title('R vs v plot')
+        plt.legend()
+        plt.show()
+        
+        ## v_z
+#        v_gas_z = v_gas[:,2]
+#        v_disk_z = v_disk[:,2]
+#        plt.plot(loc_disk_R, v_disk_z, 'r.', label='Disk', markersize=1)
+#        plt.plot(loc_gas_R, v_gas_z, 'b+', label='Gas', markersize=1)
+#        plt.xlabel('R (kpc)')
+#        plt.ylabel('v (km/s)')
+#        plt.title('R vs v plot')
+#        plt.legend()
+#        plt.show()
 
     ## Plot gas velocity direction (only for small fraction of them)
     plt.figure(figsize=(10,10))
-    gas_limit = 3
+    gas_limit = 0.5
     disk_limit = gas_limit*1.1
     num_limit = 5000
     loc_gas = loc_gas[np.where((abs(loc_gas[:,0])<gas_limit) & (abs(loc_gas[:,1])<gas_limit))]
@@ -527,8 +559,15 @@ def check_equilibrium(model_name, sizes=[10.], axes=[(0,1),(0,2),(1,2)]):
 
     return None
 
+
+def compute_scale_height_and_length(sdir, snum):
+
+
+    data = load_from_snapshot('Coordinates', 0, sdir, snum)
+
+
 model_name = "Model_Bar1"
-sdir = "/home/du/gizmo/GalIC-test/"+model_name
+sdir = "/home/du/gizmo/GasMaker/"+model_name+"/equilibrium_test"
 snum = 10
 ngas = 10000
 gas_frac = 0.1
@@ -544,11 +583,11 @@ T_gas = 10000.
 #core_num = 8
 #make_gas_equilibrium_short_evolution(sdir, model_name, core_num)
 
-core_num, end_time = 8, 0.2
-make_gas_equilibrium_evolve_gas_only(sdir, model_name, core_num, end_time)
+#core_num, end_time = 8, 1
+#make_gas_equilibrium_evolve_gas_only(sdir, model_name, core_num, end_time)
 
 ## For checking purpose
-#check_gas_velocity_before_eq(sdir, model_name)
+check_gas_velocity_before_eq(sdir, model_name)
 
 ## For checking purpose
 #check_equilibrium(model_name, sizes=[1.], axes=[(0,2)])

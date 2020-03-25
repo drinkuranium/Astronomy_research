@@ -595,3 +595,46 @@ add_gas 수정
   -> Density가 높은 곳이 계속해서 높아질 수 있음
   -> Potential field를 fitting하는 GalIC와는 다른 구조일 가능성이 큼
   -> 서우영 박사님께 보낸 질문의 답이 와야 추가적인 논의가 가능할 듯
+
+
+---------------------------------2020. 03. 20----------------------------------
+
+휴식
+
+------------------------2020. 03. 21 ~ 2020. 03. 22 주말-----------------------
+
+휴식
+
+
+---------------------------------2020. 03. 23----------------------------------
+
+plot_density_contour에서 kernel density estimation을 외부 함수로 조정
+
+2020. 03. 19에 짠 코드 0.5Gyr 진화, scale height 3배로 테스트
+ - 여전히 같은 문제점 발견, 추후 테스트 더 필요할 듯
+
+'An Introduction to Modern Astrophysics' 공부
+ -chap 24.1~24.2
+
+---------------------------------2020. 03. 24----------------------------------
+
+'An Introduction to Modern Astrophysics' 공부
+ -chap 24.3~24.4
+
+---------------------------------2020. 03. 25----------------------------------
+
+azimuthal_structure를 kernel_density_estimation을 이용하게 조정
+ - 서우영 박사님이 쓰신 논문과 비슷한 FFT 결과를 얻을 수 있었음
+ - 은하 중심 찾는 코드만 보완하면 될 듯
+
+2020. 03. 19에 짠 코드 1Gyr 진화, scale height 2배로 테스트
+ - 1Gyr 이후에도 여전히 scale height가 커지는 경향이 보임
+ - Scale length는 불분명, 이를 구하는 코드를 짜서 판별해야 할 듯
+ - Disk particle과 gas particle의 속도 비교
+  -> Disk particle은 중심으로 갈수록 v_z dispersion 증가
+     반면 gas particle은 조금 증가하다가 일정함
+  -> Gas particle의 v_R dispersion도 disk particle보다 현저히 작음
+  -> 시간이 지나도 gas의 v_z는 큰 변화 없음
+  -> 하지만 v_R의 경우 중심부가 0으로 수렴하는 현상 발생
+     (시간이 지남에 따라 rotation curve가 R이 큰 방향으로 밀림)
+  -> 이전 랩미팅 때 이가인 선배님이 겪었던 오류와 비슷한 현상인 듯

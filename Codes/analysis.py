@@ -2,7 +2,6 @@ import h5py
 import numpy as np
 import os
 import matplotlib.pyplot as plt
-import math
 import sys
 import time  ## For debugging purpose
 from scipy.optimize import curve_fit
@@ -337,7 +336,7 @@ def check_if_filename_exists(sdir,snum,snapshot_name='snapshot',snapdir_name='sn
 ## This part of code is written by Dong Uk Kim, for practicing analyzing data
 ## Applied to GalIC test models
 
-def load_data(value, sdir, snum, ptype_list=[0,1,2,3,4,5], find_center=False):
+def load_data(value, ptype_list, sdir, snum, find_center=True):
     """This subrutine inspects the existence of halo, disk and bulge then 
     load desired date from hdf5 file if the components exist.
     
@@ -350,6 +349,8 @@ def load_data(value, sdir, snum, ptype_list=[0,1,2,3,4,5], find_center=False):
         (example: 'Time' returns the simulation time in code units (single scalar).
         'Coordinates' will return the [x,y,z] coordinates in an [N,3] matrix 
         for the N resolution elements of the chosen type)
+
+      ptype_list (int list or int): Specify particle types that will be loaded.
              
       sdir (string): parent directory of the snapshot file or immediate
         snapshot sub-directory if it is a multi-part file
@@ -359,8 +360,10 @@ def load_data(value, sdir, snum, ptype_list=[0,1,2,3,4,5], find_center=False):
         if you have snapshot_001.N.hdf5, set this to '1', not 'N' or '1.N'
 
     Optionals:
-      ptype_list (int list or int): Specify particle types that will be
-        plotted. Default will plot every existing components.
+      find_center (boolean): Choose whether find the exact location of
+        the center by finding density maximum or not. Default is True.
+        Note that it involves 3D kernel density estimation which is quite slow.
+        So you can disable this if you don't need exact location of the center.
 
     Returns:
       ptype_exist (int list): Store ptypes which exist in the data.
@@ -425,6 +428,7 @@ def load_data(value, sdir, snum, ptype_list=[0,1,2,3,4,5], find_center=False):
         for i in range(len(ptype_exist_temp)):
             ptype = ptype_exist_temp[i]
             data_list_temp[i] = load_from_snapshot(value, ptype, sdir, snum)
+            data_list_temp[i] -= cm
 
         ## Load mass data
         value = 'Masses'
@@ -483,7 +487,7 @@ def load_data(value, sdir, snum, ptype_list=[0,1,2,3,4,5], find_center=False):
             ## Then pile up them into 3D array and sort each element, then
             ## pick medium value - then it becomes cubic spline kernel.
             ## First, construct only an octant of kernel matrix
-            time_measure1 = time.time()
+#            time_measure1 = time.time()
             x = np.zeros(origin+1, dtype=my_dtype)
             for j in range(len(x)):
                 x[j] = j
@@ -516,7 +520,7 @@ def load_data(value, sdir, snum, ptype_list=[0,1,2,3,4,5], find_center=False):
             kernel[:origin[0], :origin[1], :origin[2]] = np.flip(kernel_quarter[1:,1:,1:], (0,1,2))
             kernel /= np.sum(kernel)  ## Normalization for conservation
             kernel *= mass/grid_len**2  ## Assign density
-            time_measure2 = time.time()
+#            time_measure2 = time.time()
 #            print("Kernel shape: ", np.shape(kernel))
 #            print("Kernel construction time:", time_measure2-time_measure1)
 
@@ -590,8 +594,200 @@ def load_data(value, sdir, snum, ptype_list=[0,1,2,3,4,5], find_center=False):
     return ptype_exist, data_list
 
 
-def plot_particles(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
-                   axes=[(0,1),(0,2),(1,2)], trackID=0, save=False):
+def kernel_density_estimation_2D(sdir, snum, ptype_list, size, plane, grid_num,
+                                 resolution=2., opt=False, debug=False):
+    """This subrutine create density matrix by using cubic spline kernel.
+    
+    Arguments:
+      sdir (string): parent directory of the snapshot file or immediate
+        snapshot sub-directory if it is a multi-part file.
+            
+      snum (int): number of the snapshot. e.g. snapshot_001.hdf5 is '1'
+        Note for multi-part files, this is just the number of the 'set', i.e. 
+        if you have snapshot_001.N.hdf5, set this to '1', not 'N' or '1.N'
+
+      ptype_list (int list or int): Specify particle types that will be
+        plotted.
+
+      size (float): The size of the region that the estimation will be done
+        in code unit (nomarlly kpc - but inspect your GIZMO setting!).
+        Special value -1 - then the size of the plot will be scaled to
+        incorporate every particles.
+    
+      plane (tuple): Specify the projected plane. You can specify the projected
+        plane by passing a tuple of combination of 0 (for x-axis),
+        1 (for y-axis) or 2 (for z-axis). For example, if you want to choose
+        xy-plane, then pass (0,1).
+
+      grid_num (int): The number of grid points of the resulting contour.
+
+    Optionals:
+      resolution (float): Arbitrarily decrease bandwidth of the kernel
+        to avoid over-smoothing of central dense region. Default is 2.
+        Increasing it will give inaccurate results in sparse regions, and
+        increasing it too much will give inaccurate results even at the center.
+
+      opt (boolean): Decide whether execute different algorithm or not. 
+        This is faster when number density is high. Recommendeed for large
+        particle number or small grid number for.
+        Rule of thumb: If average number of particles in each grid point > 0.6,
+        then turn on this. But keep in mind that this will be vary depeding on
+        the distribution of the particles. Default is False.
+
+      debug (boolean): Turn on this when you need to check performance or
+        memory usage. Default is False.
+
+    Returns:
+      density (2D ndarray): The matrix that stores density
+    """
+
+    ## Load the locations and masses of the particles
+    ptype_exist, data_list = load_data('Coordinates', ptype_list, sdir, snum)
+    masses = np.zeros_like(ptype_exist, dtype=float)
+    for i in range(len(ptype_exist)):
+        ptype = ptype_exist[i]
+        mass = load_from_snapshot('Masses', ptype, sdir, snum)
+        masses[i] = mass[0]  ## Assume mass of each ptype particle is the same
+
+    ## Using float32 instead of float64 results in maximum ~1e-5 of
+    ## fractional error in the final result.
+    ## For strict analysis use float64, but nomrally float32 is enough.
+    my_dtype = np.float32
+    ## Density of each grid
+    density = np.zeros((grid_num, grid_num), dtype=my_dtype)
+    grid_len = 2*size/grid_num
+    x_axis, y_axis = plane
+    
+    ## Remove data out of the contour domain
+    for i in range(len(ptype_exist)):
+        ptype, data = ptype_exist[i], data_list[i]
+        if debug: print("ptype%d" %ptype)
+        ## Compute bandwidth
+        if ptype == 4 and len(data) < 100:
+            ## Sometimes SFR is so low, so number of ptype4 can be
+            ## very small. In this case, use gas data together.
+            gas_data = data_list[np.where(np.array(ptype_exist)==0)][0]
+            gas_data = np.vstack((gas_data, data))
+            sigma = np.std(gas_data[:,[x_axis,y_axis]], axis=0)
+            h = sigma*len(gas_data)**(-1/6)  ## Silverman's rule in 2D
+        else:
+            sigma = np.std(data[:,[x_axis,y_axis]], axis=0)
+            h = sigma*len(data)**(-1/6)  ## Silverman's rule in 2D
+        ## Arbitrarily decrease bandwidth
+        ## To avoid over-smoothing central dense region
+        h1, h2 = h[0]/resolution, h[1]/resolution
+
+        ## Construct matrix that stores the value of kernel function
+        ## Kernel function: Cubic spline
+        origin_x = int(2*h1/grid_len)
+        origin_y = int(2*h2/grid_len)
+        ## Regulate memory by reducing kernel size if it is too big
+        memory = 5*(origin_x+1)*(origin_y+1)*(sys.getsizeof(my_dtype())-24) ## Predicted maximum allocation memory
+        maximum_memory = 24*1024**3  ## Allocation memory limit
+        if memory > maximum_memory:
+            reduce_factor = (maximum_memory/memory)**(1/2)
+            h1 *= reduce_factor
+            h2 *= reduce_factor
+            origin_x = int(2*h1/grid_len)
+            origin_y = int(2*h2/grid_len)
+            print("Program requires too much memory. Kernel is too large.")
+            print("Reducing kernel size by %.4f..." % reduce_factor)
+            print("Results can be inaccurate.")
+            print("To avoid this, reduce grid number or expand plot area.")
+        ## I try to use numpy module as much as possible for performance
+        ## First construct 3 matrices which stores the value of cubic
+        ## spline kernel in each domain
+        ## In this code, kernel_temp0: for 0<=q<1
+        ##               kernel_temp1: for 1<=q<2
+        ##               kernel_temp2: for 2<=q
+        ## Then pile up them into 3D array and sort each element, then
+        ## pick medium value - then it becomes cubic spline kernel.
+        if debug: time_measure1 = time.time() 
+        ## First, construct only a quarter of kernel matrix
+        x = np.outer(np.arange(0, origin_x+1, 1, dtype=my_dtype),
+                     np.ones(origin_y+1, dtype=my_dtype))
+        y = np.outer(np.ones(origin_x+1, dtype=my_dtype),
+                     np.arange(0, origin_y+1, 1, dtype=my_dtype))
+        q = np.zeros(1, dtype=my_dtype)  ## Declear dtype first for memory
+        q = grid_len*((x/h1)**2 + (y/h2)**2)**(1/2)
+        del(x, y)  ## Some objects require too big memory, so free them
+        kernel_temp = np.zeros((3, origin_x+1, origin_y+1), dtype=my_dtype)
+        kernel_temp[1] = (2-q)**3
+        ## Faster than just 4-6*kernel_temp[0]**2+3*kernel_temp[0]**3
+        kernel_temp[0] = -3*kernel_temp[1]+12*(q-1.5)**2+1
+        del(q)
+        kernel_temp = np.sort((kernel_temp), axis=0)
+        kernel_quarter = np.copy(kernel_temp[1])
+        del(kernel_temp)
+        ## Construct full kernel matrix using symmetry to origin
+        kernel = np.zeros((origin_x*2+1, origin_y*2+1), dtype=my_dtype)
+        kernel[origin_x:, origin_y:] = kernel_quarter
+        kernel[:origin_x+1, :origin_y+1] = np.flip(kernel_quarter, (0,1))
+        kernel[origin_x+1:, :origin_y] = np.flip(kernel_quarter[1:,1:], 1)
+        kernel[:origin_x, origin_y+1:] = np.flip(kernel_quarter[1:,1:], 0)
+        kernel /= np.sum(kernel)  ## Normalization for conservation
+        kernel *= masses[ptype]/grid_len**2  ## Assign density
+        time_measure2 = time.time()
+        if debug:
+            print("Kernel matrix shape:", np.shape(kernel))
+            print("Kernel construction time:", time_measure2-time_measure1)
+
+        ## Since kernel function applied, even particles which are not
+        ## in the target region can affect density. So I need to
+        ## include that particles - what extra means
+        extra_x = int(2*h1/grid_len)*grid_len
+        extra_y = int(2*h2/grid_len)*grid_len
+        index = np.where((abs(data[:,x_axis])<size+extra_x)
+                         & (abs(data[:,y_axis])<size+extra_y))
+        data = data[index]
+        ## Assign particles to grid points and construct density
+        data += size + size/grid_num/2
+        grid_x = (np.floor(data[:,x_axis]/grid_len)).astype(int)
+        grid_y = (np.floor(data[:,y_axis]/grid_len)).astype(int)
+
+        ## When you choose opt=True, assign particles to the mesh
+        ## then multiply kernels to each grid point of the mesh
+        if opt:
+            particle_mesh = np.zeros((grid_num+2*origin_x, grid_num+2*origin_y))
+            for i in range(len(grid_x)):
+                particle_mesh[grid_x[i]+origin_x, grid_y[i]+origin_y] += 1
+            nonzero_mesh = np.where(particle_mesh > 0)
+            grid_x, grid_y = nonzero_mesh[0]-origin_x, nonzero_mesh[1]-origin_y
+        origin_x_array = origin_x*np.ones_like(grid_x)
+        origin_y_array = origin_y*np.ones_like(grid_y)
+        ## Consider boundaries and set limit of kernel approapriately
+        x_left = np.min((grid_x, origin_x_array), axis=0)
+        x_right = np.min((grid_num-grid_x-1, origin_x_array), axis=0)
+        y_left = np.min((grid_y, origin_y_array), axis=0)
+        y_right = np.min((grid_num-grid_y-1, origin_y_array), axis=0)
+        for j in range(len(grid_x)):
+            sgrid = kernel[origin_x-x_left[j] : origin_x+x_right[j]+1,
+                           origin_y-y_left[j] : origin_y+y_right[j]+1]
+            ## For opt=True, number of particle in each grid must be considered.
+            if opt:
+                pnum = particle_mesh[grid_x[j]+origin_x, grid_y[j]+origin_y]
+                density[grid_x[j]-x_left[j] : grid_x[j]+x_right[j]+1,
+                        grid_y[j]-y_left[j] : grid_y[j]+y_right[j]+1] += sgrid*pnum
+            else:
+                density[grid_x[j]-x_left[j] : grid_x[j]+x_right[j]+1,
+                        grid_y[j]-y_left[j] : grid_y[j]+y_right[j]+1] += sgrid
+        del(sgrid, kernel, kernel_quarter)
+        if debug:
+            print("Particle assign time:", time.time()-time_measure2,
+                  "(particle number: %d)\n" % len(data))
+
+    if debug:
+        x_grid = np.linspace(-size, size, grid_num, endpoint=True)
+        y_grid = np.linspace(-size, size, grid_num, endpoint=True)
+        X, Y = np.meshgrid(x_grid, y_grid)
+        plt.contourf(X, Y, np.sum(np.flip(density.T, axis=0), axis=0))
+        plt.show()
+
+    return density
+
+
+
+def plot_particles(sdir, snum, ptype_list, size, plane, trackID=0, find_center=True, save=False):
     """This subruting plots the particles of type desinated by ptype_list,
     within specified size (by sizes) onto specified projected plane (by axes).
     Can save the figure to sub-directory of the data directory
@@ -605,26 +801,27 @@ def plot_particles(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
         Note for multi-part files, this is just the number of the 'set', i.e. 
         if you have snapshot_001.N.hdf5, set this to '1', not 'N' or '1.N'
 
-    Optionals:
       ptype_list (int list or int): Specify particle types that will be
-        plotted. Default will plot every existing components.
+        plotted.
 
-      sizes (int, float list or int, float): The size of the plot in code unit
-        (nomarlly kpc - but inspect your GIZMO setting!). Default value is 10,
-        recommended for observing disk and bulge structures. If you passes
-        a list, then it will repeatedly plot the density contour within
-        the size specified by each element of the list.
+      size (float): The size of the plot in code unit
+        (nomarlly kpc - but inspect your GIZMO setting!).
         Special value -1 - then the size of the plot will be scaled to
         incorporate every particles.
     
-      axes (tuple list or tuple): Specify the projected plane. Users
-        can specify the projected plane by passing a list of tuple (or just 
-        a tuple) of combination of 0 (for x-axis), 1 (for y-axis) or 2
-        (for z-axis). For example, if one want to choose xy-plane, then pass
-        axis=(0,1). Default will plot all (xy,xz,yz) plane.
+      plane (tuple): Specify the projected plane. You can specify the projected
+        plane by passing a tuple of combination of 0 (for x-axis),
+        1 (for y-axis) or 2 (for z-axis). For example, if you want to choose
+        xy-plane, then pass (0,1).
 
+    Optionals:
       trackID (int): Choose a particle by its ID that you want to track.
         Default is 0, in this case, does not track any particles.
+
+      find_center (boolean): Choose whether find the exact location of
+        the center by finding density maximum or not. Default is True.
+        Note that it involves 3D kernel density estimation which is quite slow.
+        So you can disable this if you don't need exact location of the center.
 
       save (boolean): Determine whether save the plot or not. Default is False.
         You can specify the saving directory. Default will be a sub-directory
@@ -636,100 +833,78 @@ def plot_particles(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
 
     ## Load the locations of the particles
     value = 'Coordinates'
-    ptype_exist, data_list = load_data(value, sdir, snum, ptype_list)
+    ptype_exist, data_list = load_data(value, ptype_list, sdir, snum, find_center=find_center)
 
-    ## Treat float of int number as a list of length 1
-    if type(sizes) == float or type(sizes) == int: sizes = [sizes]
-    
-    ## Inspect legitimacy of size
-    for size in sizes:
-        if size<=0:
-            print("Non-positive size is entered. Please enter positive value for the size.")
+    ## Plot the entire galaxy (including outermost halo particles)
+    plt.figure(figsize = (10,10))
+    plt.axis('equal')
 
-    ## Treat tuple as a list of length 1
-    if type(axes) == tuple: axes = [axes]
-
-    ## Inspect legitimacy of the format
-    for axis in axes:
-        if axis[0] != 0 and axis[0] !=1 and axis[0] != 2 and \
-        axis[1] != 0 and axis[1] !=1 and axis[1] != 2:
-            print("Please follow the format: [0, 1, 2] for [x, y, z] axis - then \
-                  specify the plane by pairing axis like (0,2), in case of yz-plane.")
-            return None 
-
-    ## Plot galaxies within given size
+    ## To prevent overwritten of one data points over other data points
+    ## during plot, I plot only a fraction of data at once
+    markers = ['c.', 'k.', 'r.', 'b.', 'm.', 'ko']
+    markers_size = 20/size
+    if markers_size < 0.1:
+        markers_size = 0.1
+    ## Increase n to avoid overwrapping of plotted particles
+    x_axis, y_axis = plane
+    n = 1
+    for i in range(n):
+        for j in range(len(ptype_exist)):
+            ptype, data = ptype_exist[j], data_list[j]
+            data_len = len(data)
+            start = int(round(data_len*i/n))
+            end = int(round(data_len*(i+1)/n))
+            plt.plot(data[start:end,x_axis], data[start:end,y_axis],
+                     markers[ptype], markersize=markers_size)
     axis_label = ["X", "Y", "Z"]
-    for size in sizes:
-        for x_axis, y_axis in axes:
+    x_label, y_label = axis_label[x_axis], axis_label[y_axis]
+    plt.xlabel(x_label+" axis [kpc]")
+    plt.ylabel(y_label+" axis [kpc]")
+    plt.title("t=%.2f Gyr, projected onto %s%s-plane galaxy" %(snum*0.01, x_label, y_label))
+    plt.xlim((-size, size))
+    plt.ylim((-size, size))
+    ## Plot the origin
+    plt.plot(0, 0, 'ko', markersize=5)
 
-            ## Plot the entire galaxy (including outermost halo particles)
-            plt.figure(figsize = (10,10))
-            plt.axis('equal')
-
-            ## To prevent overwritten of one data points over other data points
-            ## during plot, I plot only a fraction of data at once
-            markers = ['c.', 'k.', 'r.', 'b.', 'm.', 'ko']
-            markers_size = 20/size
-            if markers_size < 0.1:
-                markers_size = 0.1
-            ## Increase n to avoid overwrapping of plotted particles
-            n = 1
-            for i in range(n):
-                for j in range(len(ptype_exist)):
-                    ptype, data = ptype_exist[j], data_list[j]
-                    data_len = len(data)
-                    start = int(round(data_len*i/n))
-                    end = int(round(data_len*(i+1)/n))
-                    plt.plot(data[start:end,x_axis], data[start:end,y_axis],
-                             markers[ptype], markersize=markers_size)
-            x_label, y_label = axis_label[x_axis], axis_label[y_axis]
-            plt.xlabel(x_label+" axis [kpc]")
-            plt.ylabel(y_label+" axis [kpc]")
-            plt.title("t=%.2f Gyr, projected onto %s%s-plane galaxy" %(snum*0.01, x_label, y_label))
-            plt.xlim((-size, size))
-            plt.ylim((-size, size))
-            ## Plot the origin
-            plt.plot(0, 0, 'ko', markersize=5)
-
-            ## Highlihgt the particle that you want to track
-            if trackID != 0:
-                ## Find the particle
-                dummy, ids = load_data('ParticleIDs', sdir, snum, ptype_list=ptype_exist)
-                dummy, locs = load_data('Coordinates', sdir, snum, ptype_list=ptype_exist)
-                for ptype_index in range(len(ptype_exist)):
-                    part_index = np.where(ids[ptype_index]==trackID)
-                    if len(part_index[0]) >= 1:
-                        break
-                ## Plot the particle when it exists
-                if len(part_index[0]) < 1:
-                    print("Particle does not exist. Please enter valid particle ID.")
-                elif len(part_index[0]) == 1:
-                    track_markers = ['c*', 'k*', 'r*', 'b*', 'm*', 'k*']
-                    loc = locs[ptype_index][part_index[0]][0]
-                    ptype_trackID = ptype_exist[ptype_index]
-                    ## When the particle is out of the plot
-                    if abs(loc[x_axis]) > size or abs(loc[y_axis]) > size:
-                        print("Particle %d is out of the plot." %trackID)
-                    plt.plot(loc[x_axis], loc[y_axis],
-                             track_markers[ptype_trackID], markersize=15)
-                else:
-                    ## Should not reach here
-                    sys.exit("Error: More than 1 particles have the same ID")
-          
-            ## Save the figure if save flag is on
-            if save:
-                ## Create the directory if desniated directory does not exist
-                Path(sdir+"/plot/galaxy_image/%s%s-plane"
-                     %(x_label, y_label)).mkdir(parents=True, exist_ok=True)
-                plt.savefig(sdir+"/plot/galaxy_image/%s%s-plane/t=%.2f Gyr particle plot.png"
-                            %(x_label, y_label, snum*0.01))
-            plt.show()
+    ## Emphasize the particle that you want to track
+    if trackID != 0:
+        ## Find the particle
+        dummy, ids = load_data('ParticleIDs', ptype_exist, sdir, snum)
+        dummy, locs = load_data('Coordinates', ptype_exist, sdir, snum)
+        for ptype_index in range(len(ptype_exist)):
+            part_index = np.where(ids[ptype_index]==trackID)
+            if len(part_index[0]) >= 1:
+                break
+        ## Plot the particle when it exists
+        if len(part_index[0]) < 1:
+            print("Particle does not exist. Please enter valid particle ID.")
+        elif len(part_index[0]) == 1:
+            track_markers = ['c*', 'k*', 'r*', 'b*', 'm*', 'k*']
+            loc = locs[ptype_index][part_index[0]][0]
+            ptype_trackID = ptype_exist[ptype_index]
+            ## When the particle is out of the plot
+            if abs(loc[x_axis]) > size or abs(loc[y_axis]) > size:
+                print("Particle %d is out of the plot." %trackID)
+            plt.plot(loc[x_axis], loc[y_axis],
+                     track_markers[ptype_trackID], markersize=15)
+        else:
+            ## Should not reach here
+            sys.exit("Error: More than 1 particles have the same ID")
+  
+    ## Save the figure if save flag is on
+    if save:
+        ## Create the directory if desniated directory does not exist
+        Path(sdir+"/plot/galaxy_image/%s%s-plane"
+             %(x_label, y_label)).mkdir(parents=True, exist_ok=True)
+        plt.savefig(sdir+"/plot/galaxy_image/%s%s-plane/t=%.2f Gyr particle plot.png"
+                    %(x_label, y_label, snum*0.01))
+    plt.show()
 
     return None
 
 
-def plot_density_contour(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
-                   axes=[(0,1),(0,2),(1,2)], save=False, opt=False):
+def plot_density_contour(sdir, snum, ptype_list, size, plane,
+                         grid_num=400, save=False, opt=False):
     """This subrutine plots density contours of the particles of type desinated
     by ptype_list, within specified size (by sizes) onto specified projected
     plane (by axes). Can save the each figure to sub-directory of the data
@@ -743,28 +918,27 @@ def plot_density_contour(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
         Note for multi-part files, this is just the number of the 'set', i.e. 
         if you have snapshot_001.N.hdf5, set this to '1', not 'N' or '1.N'
 
-    Optionals:
       ptype_list (int list or int): Specify particle types that will be
-        plotted. Default will plot every existing components.
+        plotted.
 
-      sizes (int, float list or int, float): The size of the plot in code unit
-        (nomarlly kpc - but inspect your GIZMO setting!). Default value is 10,
-        recommended for observing disk and bulge structures. If you passes
-        a list, then it will repeatedly plot the density contour within
-        the size specified by each element of the list.
+      size (float): The size of the plot in code unit
+        (nomarlly kpc - but inspect your GIZMO setting!).
         Special value -1 - then the size of the plot will be scaled to
         incorporate every particles.
     
-      axes (tuple list or tuple): Specify the projected plane. Users
-        can specify the projected plane by passing a list of tuple (or just 
-        a tuple) of combination of 0 (for x-axis), 1 (for y-axis) or 2
-        (for z-axis). For example, if one want to choose xy-plane, then pass
-        axis=(0,1). Default will plot all (xy,xz,yz) plane.
+      plane (tuple): Specify the projected plane. You can specify the projected
+        plane by passing a tuple of combination of 0 (for x-axis),
+        1 (for y-axis) or 2 (for z-axis). For example, if you want to choose
+        xy-plane, then pass (0,1).
+
+    Optionals:
+      grid_num (int): The number of grid points of the resulting contour.
+        Default is 400, and increasign further hardly changes the results.
 
       save (boolean): Determine whether save the plot or not. Default is False.
         You can specify the saving directory. Default will be a sub-directory
         of the data directory, and if the directory does not exist,
-        then it will create the directory.
+        then it will create the directory.grid_num=4
 
       opt (boolean): Decide whether execute different algorithm or not. 
         This is faster when number density is high. Recommendeed for large
@@ -776,201 +950,46 @@ def plot_density_contour(sdir, snum, ptype_list=[0,1,2,3,4,5], sizes=[10.],
     Returns: None
     """
 
-    ## Load the locations of the particles
-    value = 'Coordinates'
-    ptype_exist, data_list = load_data(value, sdir, snum, ptype_list)
-    ## Load mass data
-    value = 'Masses'
-    masses = np.zeros(6)
-    for ptype in ptype_exist:
-        mass = load_from_snapshot(value, ptype, sdir, snum)
-        masses[ptype] = mass[0]  ## Assume mass of each ptype particle is the same
+    grid_num += 1  ## For inner process, resulting grid number is still the same
 
-    ## Treat float of int number as a list of length 1
-    if type(sizes) == float or type(sizes) == int: sizes = [sizes]
-    
-    ## Inspect legitimacy of size
-    for size in sizes:
-        if size<=0:
-            print("Non-positive size is entered. Please enter positive value for the size.")
+    ## Create meshgrid to plot contour
+    x_grid = np.linspace(-size, size, grid_num, endpoint=True)
+    y_grid = np.linspace(-size, size, grid_num, endpoint=True)
+    X, Y = np.meshgrid(x_grid, y_grid)
 
-    ## Treat tuple as a list of length 1
-    if type(axes) == tuple: axes = [axes]
+    density = kernel_density_estimation_2D(sdir, snum, ptype_list, size, plane,
+                                           grid_num, opt=opt, debug=False)
 
-    ## Inspect legitimacy of the format
-    for axis in axes:
-        if axis[0] != 0 and axis[0] !=1 and axis[0] != 2 and \
-        axis[1] != 0 and axis[1] !=1 and axis[1] != 2:
-            print("Please follow the format: [0, 1, 2] for [x, y, z] axis - then \
-                  specify the plane by pairing axis like (0,2), in case of yz-plane.")
-            return None 
-
-    ## Plot density contour
+    ## Plot contour
+    fig, ax = plt.subplots(figsize=(12,9.9))
+    plt.axis('equal')
+    contour = plt.contourf(X, Y, np.flip(density.T, axis=0), 40)
+    fig.colorbar(contour)
+#    plt.figure(figsize=(10,10))
+#    plt.axis('equal')
+#    plt.contourf(X, Y, np.flip(density.T, axis=0), levels=np.arange(0, 0.01, 0.0005))
     axis_label = ["X", "Y", "Z"]
-    for size in sizes:
+    x_axis, y_axis = plane
+    x_label, y_label = axis_label[x_axis], axis_label[y_axis]
+    x_label, y_label = axis_label[x_axis], axis_label[y_axis]
+    plt.xlabel(x_label+" axis [kpc]")
+    plt.ylabel(y_label+" axis [kpc]")
+    plt.xlim((-size, size))
+    plt.ylim((-size, size))
+    plt.title("t=%.2f Gyr, Galaxy density contour projected onto %s%s-plane"
+              %(snum*0.01, x_label, y_label))
+    ## Save the figure if save flag is on
+    if save:
+        ## Create the directory if desniated directory does not exist
+        Path(sdir+"/plot/density_contour/%s%s-plane"
+             %(x_label, y_label)).mkdir(parents=True, exist_ok=True)
+        plt.savefig(sdir+"/plot/density_contour/%s%s-plane/t=%.2f Gyr particle plot.png"
+                    %(x_label, y_label, snum*0.01))
 
-        ## Create meshgrid to plot contour
-        grid_num = 401  ## Increasing bigger than 401 hardly change results
-        x_grid = np.linspace(-size, size, grid_num, endpoint=True)
-        y_grid = np.linspace(-size, size, grid_num, endpoint=True)
-        X, Y = np.meshgrid(x_grid, y_grid)
-        grid_len = 2*size/(grid_num-1)
+    plt.show()
 
-        for x_axis, y_axis in axes:       
+    return None
 
-            ## Using float32 instead of float64 results in maximum ~1e-5 of
-            ## fractional error in the final result.
-            ## For strict analysis use float64, but nomrally float32 is enough.
-            my_dtype = np.float32
-            ## Density of each grid
-            density = np.zeros((grid_num, grid_num), dtype=my_dtype)
-            
-            ## Remove data out of the contour domain 
-            for i in range(len(ptype_exist)):
-                ptype, data = ptype_exist[i], data_list[i]
-                print("ptype%d" %ptype)
-                ## Compute bandwidth
-                if ptype == 4 and len(data) < 100:
-                    ## Sometimes SFR is so low, so number of ptype4 can be
-                    ## very small. In this case, use gas data together.
-                    gas_data = data_list[np.where(np.array(ptype_exist)==0)][0]
-                    gas_data = np.vstack((gas_data, data))
-                    sigma = np.std(gas_data[:,[x_axis,y_axis]], axis=0)
-                    h = sigma*len(gas_data)**(-1/6)  ## Silverman's rule in 2D
-                else:
-                    sigma = np.std(data[:,[x_axis,y_axis]], axis=0)
-                    h = sigma*len(data)**(-1/6)  ## Silverman's rule in 2D
-                ## Arbitrarily decrease bandwidth
-                ## To avoid over-smoothing central dense region
-                resolution = 2  ## Arbitrary number! - Rule of thumb is 2
-                h1, h2 = h[0]/resolution, h[1]/resolution
-
-                ## Construct matrix that stores the value of kernel function
-                ## Kernel function: Cubic spline
-                origin_x = int(2*h1/grid_len)
-                origin_y = int(2*h2/grid_len)
-                ## Regulate memory by reducing kernel size if it is too big
-                memory = 5*(origin_x+1)*(origin_y+1)*(sys.getsizeof(my_dtype())-24) ## Predicted maximum allocation memory
-                maximum_memory = 24*1024**3  ## Allocation memory limit
-                if memory > maximum_memory:
-                    reduce_factor = (maximum_memory/memory)**(1/2)
-                    h1 *= reduce_factor
-                    h2 *= reduce_factor
-                    origin_x = int(2*h1/grid_len)
-                    origin_y = int(2*h2/grid_len)
-                    print("Program requires too much memory. Kernel is too large.")
-                    print("Reducing kernel size by %.4f..." % reduce_factor)
-                    print("Results can be inaccurate.")
-                    print("To avoid this, reduce grid number or expand plot area.")
-                ## I try to use numpy module as much as possible for performance
-                ## First construct 3 matrices which stores the value of cubic
-                ## spline kernel in each domain
-                ## In this code, kernel_temp0: for 0<=q<1
-                ##               kernel_temp1: for 1<=q<2
-                ##               kernel_temp2: for 2<=q
-                ## Then pile up them into 3D array and sort each element, then
-                ## pick medium value - then it becomes cubic spline kernel.
-                time_measure1 = time.time()
-                ## First, construct only a quarter of kernel matrix
-                x = np.outer(np.arange(0, origin_x+1, 1, dtype=my_dtype),
-                             np.ones(origin_y+1, dtype=my_dtype))
-                y = np.outer(np.ones(origin_x+1, dtype=my_dtype),
-                             np.arange(0, origin_y+1, 1, dtype=my_dtype))
-                q = np.zeros(1, dtype=my_dtype)  ## Declear dtype first for memory
-                q = grid_len*((x/h1)**2 + (y/h2)**2)**(1/2)
-                del(x, y)  ## Some objects require too big memory, so free them
-                kernel_temp = np.zeros((3, origin_x+1, origin_y+1), dtype=my_dtype)
-                kernel_temp[1] = (2-q)**3
-                ## Faster than just 4-6*kernel_temp[0]**2+3*kernel_temp[0]**3
-                kernel_temp[0] = -3*kernel_temp[1]+12*(q-1.5)**2+1
-                del(q)
-                kernel_temp = np.sort((kernel_temp), axis=0)
-                kernel_quarter = np.copy(kernel_temp[1])
-                del(kernel_temp)
-                ## Construct full kernel matrix using symmetry to origin
-                kernel = np.zeros((origin_x*2+1, origin_y*2+1), dtype=my_dtype)
-                kernel[origin_x:, origin_y:] = kernel_quarter
-                kernel[:origin_x+1, :origin_y+1] = np.flip(kernel_quarter, (0,1))
-                kernel[origin_x+1:, :origin_y] = np.flip(kernel_quarter[1:,1:], 1)
-                kernel[:origin_x, origin_y+1:] = np.flip(kernel_quarter[1:,1:], 0)
-                print("Kernel matrix shape:", np.shape(kernel))
-                kernel /= np.sum(kernel)  ## Normalization for conservation
-                kernel *= masses[ptype]/grid_len**2  ## Assign density
-                time_measure2 = time.time()
-                print("Kernel construction time:", time_measure2-time_measure1)
-
-                ## Since kernel function applied, even particles which are not
-                ## in the target region can affect density. So I need to
-                ## include that particles - what extra means
-                extra_x = int(2*h1/grid_len)*grid_len
-                extra_y = int(2*h2/grid_len)*grid_len
-                index = np.where((abs(data[:,x_axis])<size+extra_x)
-                                 & (abs(data[:,y_axis])<size+extra_y))
-                data = data[index]
-                ## Assign particles to grid points and construct density
-                data += size + size/grid_num/2
-                grid_x = (np.floor(data[:,x_axis]/grid_len)).astype(int)
-                grid_y = (np.floor(data[:,y_axis]/grid_len)).astype(int)
-
-                ## When you choose opt=True, assign particles to the mesh
-                ## then multiply kernels to each grid point of the mesh
-                if opt:
-                    particle_mesh = np.zeros((grid_num+2*origin_x, grid_num+2*origin_y))
-                    for i in range(len(grid_x)):
-                        particle_mesh[grid_x[i]+origin_x, grid_y[i]+origin_y] += 1
-                    nonzero_mesh = np.where(particle_mesh > 0)
-                    grid_x, grid_y = nonzero_mesh[0]-origin_x, nonzero_mesh[1]-origin_y
-                origin_x_array = origin_x*np.ones_like(grid_x)
-                origin_y_array = origin_y*np.ones_like(grid_y)
-                ## Consider boundaries and set limit of kernel approapriately
-                x_left = np.min((grid_x, origin_x_array), axis=0)
-                x_right = np.min((grid_num-grid_x-1, origin_x_array), axis=0)
-                y_left = np.min((grid_y, origin_y_array), axis=0)
-                y_right = np.min((grid_num-grid_y-1, origin_y_array), axis=0)
-                for j in range(len(grid_x)):
-                    sgrid = kernel[origin_x-x_left[j] : origin_x+x_right[j]+1,
-                                   origin_y-y_left[j] : origin_y+y_right[j]+1]
-                    ## For opt=True, number of particle in each grid must be considered.
-                    if opt:
-                        pnum = particle_mesh[grid_x[j]+origin_x, grid_y[j]+origin_y]
-                        density[grid_x[j]-x_left[j] : grid_x[j]+x_right[j]+1,
-                                grid_y[j]-y_left[j] : grid_y[j]+y_right[j]+1] += sgrid*pnum
-                    else:
-                        density[grid_x[j]-x_left[j] : grid_x[j]+x_right[j]+1,
-                                grid_y[j]-y_left[j] : grid_y[j]+y_right[j]+1] += sgrid
-                del(sgrid, kernel, kernel_quarter)
-                print("Particle assign time:", time.time()-time_measure2,
-                      "(particle number: %d)\n" % len(data))
-
-            density = density.T
-
-            ## Plot contour
-            fig, ax = plt.subplots(figsize=(12,9.9))
-            plt.axis('equal')
-            contour = plt.contourf(X, Y, density, 40)
-            fig.colorbar(contour)
-#            plt.figure(figsize=(10,10))
-#            plt.axis('equal')
-#            plt.contourf(X, Y, density, levels=np.arange(0, 0.01, 0.0005))
-            x_label, y_label = axis_label[x_axis], axis_label[y_axis]
-            x_label, y_label = axis_label[x_axis], axis_label[y_axis]
-            plt.xlabel(x_label+" axis [kpc]")
-            plt.ylabel(y_label+" axis [kpc]")
-            plt.xlim((-size, size))
-            plt.ylim((-size, size))
-            plt.title("t=%.2f Gyr, Galaxy density contour projected onto %s%s-plane"
-                      %(snum*0.01, x_label, y_label))
-            ## Save the figure if save flag is on
-            if save:
-                ## Create the directory if desniated directory does not exist
-                Path(sdir+"/plot/density_contour/%s%s-plane"
-                     %(x_label, y_label)).mkdir(parents=True, exist_ok=True)
-                plt.savefig(sdir+"/plot/density_contour/%s%s-plane/t=%.2f Gyr particle plot.png"
-                            %(x_label, y_label, snum*0.01))
-
-            plt.show()
-
-    return density
 
 def sersic_profile(r, I_e, R_e, n):
     """Compute luminosity by using Sersic profile
@@ -991,7 +1010,7 @@ def sersic_profile(r, I_e, R_e, n):
     return np.log10(I_e*np.exp(-(2*n-1/3)*((r/R_e)**(1/n)-1)))
 
 
-def sersic_fitting(sdir, snum, ptype_list=[0,1,2,3,4,5], axes=[(0,1)]):
+def sersic_fitting(sdir, snum, plane):
     """This subrutine fits the distribution of stars to Sersic profile, and
     find out proper value of n (Sersic index) and R_e (effective radius) of
     galactic components (specified by ptype_list). Assume that the intensity
@@ -1005,43 +1024,52 @@ def sersic_fitting(sdir, snum, ptype_list=[0,1,2,3,4,5], axes=[(0,1)]):
         Note for multi-part files, this is just the number of the 'set', i.e. 
         if you have snapshot_001.N.hdf5, set this to '1', not 'N' or '1.N'
 
-    Optional:
-      ptype_list (int list or int): Specify particle types that will be
-        plotted. Default will plot every existing components.
-    
-      axes (tuple list or tuple): Specify the projected plane. Users
-        can specify the projected plane by passing a list of tuple (or just 
-        a tuple) of combination of 0 (for x-axis), 1 (for y-axis) or 2
-        (for z-axis). For example, if one want to choose xy-plane, then pass
-        axis=(0,1). Default will plot all (xy,xz,yz) plane.
+      plane (tuple): Specify the projected plane. You can specify the projected
+        plane by passing a tuple of combination of 0 (for x-axis),
+        1 (for y-axis) or 2 (for z-axis). For example, if you want to choose
+        xy-plane, then pass (0,1).
 
     Returns: Nothing
     """
-    ## Load the locations of the particles
-    value = 'Coordinates'
-    ptype_exist, data_list = load_data(value, sdir, snum, ptype_list)
-    ## Load mass data
-    value = 'Masses'
-    masses = np.zeros(6)
-    for ptype in ptype_exist:
-        mass = load_from_snapshot(value, ptype, sdir, snum)
-        masses[ptype] = mass[0]  ## Assume mass of each ptype particle is the same
+    
+    if kernel:
+        ## Set grid for fitting
+        ptype_exist, data_list = load_data('Coordinates', [1,2,3,4], sdir, snum)
+        
 
-    ## Treat tuple as a list of length 1
-    if type(axes) == tuple: axes = [axes]
-
-    ## Inspect legitimacy of the format
-    for axis in axes:
-        if axis[0] != 0 and axis[0] !=1 and axis[0] != 2 and \
-        axis[1] != 0 and axis[1] !=1 and axis[1] != 2:
-            print("Please follow the format: [0, 1, 2] for [x, y, z] axis - then \
-                  specify the plane by pairing axis like (0,2), in case of yz-plane.")
-
-    ## All particles in halo or bulge components are uniform
-    ## So Sersic fitting of those components are fairly easy
-    ptype_name = ["Halo", "Bulge"]
-    for i in range(len(ptype_name)):
-        for x_axis, y_axis in axes:
+        ptype_name = ["Halo", "Bulge"]
+        for i in range(len(ptype_name)):
+            ptype = 2*i+1
+            ## Continue to next ptype if ptype does not exist
+            if ptype not in ptype_exist:
+                break
+            density_grid_len = 0.02
+            ## To deal with boundary (R==size) grid, include more than specified size
+            density_grid_num = 2*round(size/density_grid_len)+2
+            density = kernel_density_estimation_2D(sdir, snum, ptype, size,
+                                                   (0,1), density_grid_num, resolution=5, opt=False)
+            x = np.outer(np.arange(-size+density_grid_len/2, size, density_grid_len, dtype=float),
+                     np.ones(len(density), dtype=float))
+            y = np.outer(np.ones(len(density[0]), dtype=float),
+                     np.arange(-size+density_grid_len/2, size, density_grid_len, dtype=float))
+            distance = (x**2+y**2)**(1/2)
+            ## Flatten and sort by the distance from the origin
+            ind = np.argsort(distance.flatten())
+            density = np.take_along_axis(density.flatten(), ind, axis=0)
+    else:
+        ## Load the locations and masses of the particles
+        ptype_exist, data_list = load_data('Coordinates', [1,2,3,4], sdir, snum)
+        masses = np.zeros_like(ptype_exist, dtype=float)
+        for i in range(len(ptype_exist)):
+            ptype = ptype_exist[i]
+            mass = load_from_snapshot('Masses', ptype, sdir, snum)
+            masses[i] = mass[0]  ## Assume mass of each ptype particle is the same
+    
+        ## All particles in halo or bulge components are uniform
+        ## So Sersic fitting of those components are fairly easy
+        ptype_name = ["Halo", "Bulge"]
+        for i in range(len(ptype_name)):
+    
             ptype = 2*i+1
             ## Continue to next ptype if ptype does not exist
             if ptype not in ptype_exist:
@@ -1050,6 +1078,7 @@ def sersic_fitting(sdir, snum, ptype_list=[0,1,2,3,4,5], axes=[(0,1)]):
             data = data_list[ptype_index]
                 
             ## Compute R_e, where half of the particles reside inside
+            x_axis, y_axis = plane
             R = (data[:,x_axis]**2 + data[:,y_axis]**2)**(1/2)
             R = np.sort(R)
             R_len = len(R)
@@ -1075,7 +1104,7 @@ def sersic_fitting(sdir, snum, ptype_list=[0,1,2,3,4,5], axes=[(0,1)]):
                 luminosity[j+1] = (density[j]+density[j+1])/2
             luminosity[0] = luminosity[1] + (luminosity[1]-luminosity[2])
             luminosity[-1] = luminosity[-2] + (luminosity[-2]-luminosity[-3])
-        
+    
             ## Compute I_e, luminosity at effective radius
             for j in range(len(r_domain)):
                 if not R_e > r_domain[j]:
@@ -1100,27 +1129,27 @@ def sersic_fitting(sdir, snum, ptype_list=[0,1,2,3,4,5], axes=[(0,1)]):
             plt.title("%s Sersic profile fitting" % ptype_name[i])
             plt.legend()
             plt.show()
-    
-    ## For disk Sersic fitting, gas and newly formed stars should be included
-    ## Fist examine existence of disk
-    disk_ptypes = [0,2,4]
-    for ptype in disk_ptypes:
-        if ptype not in ptype_exist:
-            disk_ptypes.remove(ptype)
-    
-    if len(disk_ptypes) > 0:
-        ## Constuct data list including every disk ptypes and their masses
-        data = np.array([-1,-1,-1,-1])  ## Just initialization, will be removed
-        for ptype in disk_ptypes:
-            ptype_index = np.where(np.array(ptype_exist)==ptype)[0][0]
-            data_one_ptype = data_list[ptype_index]
-            mass_one_ptype = np.ones_like(data_one_ptype[:,0])*masses[ptype_index]
-            data_one_ptype = np.hstack((data_one_ptype, mass_one_ptype[:,None]))
-            data = np.vstack((data, data_one_ptype))
-        data = np.delete(data, 0, axis=0)
         
-        for x_axis, y_axis in axes:
+        ## For disk Sersic fitting, newly formed stars should be included
+        ## Fist examine existence of disk
+        disk_ptypes = [2,4]
+        for ptype in disk_ptypes:
+            if ptype not in ptype_exist:
+                disk_ptypes.remove(ptype)
+        
+        if len(disk_ptypes) > 0:
+            ## Constuct data list including every disk ptypes and their masses
+            data = np.array([-1,-1,-1,-1])  ## Just initialization, will be removed
+            for ptype in disk_ptypes:
+                ptype_index = np.where(np.array(ptype_exist)==ptype)[0][0]
+                data_one_ptype = data_list[ptype_index]
+                mass_one_ptype = np.ones_like(data_one_ptype[:,0])*masses[ptype_index]
+                data_one_ptype = np.hstack((data_one_ptype, mass_one_ptype[:,None]))
+                data = np.vstack((data, data_one_ptype))
+            data = np.delete(data, 0, axis=0)
+        
             ## Compute R_e, where half of the particles reside inside
+            x_axis, y_axis = plane
             R = (data[:,x_axis]**2 + data[:,y_axis]**2)**(1/2)
             mass = data[:,3]
             ind = np.argsort(R, axis=0)
@@ -1134,7 +1163,7 @@ def sersic_fitting(sdir, snum, ptype_list=[0,1,2,3,4,5], axes=[(0,1)]):
                     break
             ## Interplate to compute R_e
             R_e = R[i] - (R[i]-R[i-1])*(mass_within_R-half_mass)/mass[i]
-
+    
             ## Divide r domain so that each r grid contains certain number of particles
             particle_cutoff = int(len(R)*0.95)  ## Exclude outliers
             resolution = 100
@@ -1184,7 +1213,7 @@ def sersic_fitting(sdir, snum, ptype_list=[0,1,2,3,4,5], axes=[(0,1)]):
     return None
 
 
-def azimuthal_structure(sdir, snum):
+def azimuthal_structure(sdir, snum, size=6., kernel=True):
     """This subrutine computes radial density function of the disk, then take 
     Fourier transform to the density function and plot the results.
     
@@ -1196,80 +1225,152 @@ def azimuthal_structure(sdir, snum):
         Note for multi-part files, this is just the number of the 'set', i.e. 
         if you have snapshot_001.N.hdf5, set this to '1', not 'N' or '1.N'
 
+      size (float): The size of the region that you will analyze in code unit
+        (nomarlly kpc - but inspect your GIZMO setting!).
+
+    Optionals:
+      kernel (boolean): Choose whether use kernel density estimation or not.
+        Using kernel density estimation is more accurate, but slower.
+        
     Raises:
       If there are no disk particles, the entire program will be halted.
 
     Returns: Nothing
     """
 
-    ## Load the locations of the particles
-    value = 'Coordinates'
-    ptype_list, data_list = load_data(value, sdir, snum, ptype_list=[2,4])
+    ## This one is slower since it uses kernel estimation, but more accurate
+    if kernel:
 
-    ## Compute R for each particle
-    data = data_list[0]
-    data = np.vstack((data_list[0], data_list[1]))
-    R = (data[:,0]**2 + data[:,1]**2)**(1/2)
-    theta = np.arccos(data[:,0]/R)
-    cyl = np.vstack((R, theta))
-    cyl = cyl.T
-    cyl = cyl[cyl[:,0].argsort()]  # Sort by R
-    particle_num = len(cyl)
+        ## Set grid points for FFT analysis
+        R_grid_len = 0.01
+        R_grid = np.arange(0, size+R_grid_len/2, R_grid_len)
+        theta_grid_num = 50
+        theta_grid = np.linspace(0, 2*np.pi, theta_grid_num, endpoint=False)
 
-    ## Generate R grid and theta grid at each R
-    particle_cutoff = int(particle_num*0.5)  ## Exclude outliers
-    R_grid_num = 50
-    R_max = cyl[particle_cutoff, 0]
-    R_grid = np.linspace(0, R_max, R_grid_num+1, endpoint=True)
-    R_grid_len = R_max/R_grid_num
-    R_grid_point = R_grid[:-1] + R_grid_len/2
-    theta_grid_num = 100
-    theta_grid = np.linspace(0, 2*np.pi, theta_grid_num, endpoint=True)
-    theta_grid_len = 2*np.pi/theta_grid_num
-    theta_grid_point = theta_grid[:-1] + theta_grid_len/2
+        ## Create density matrix using kernel density estimation
+        disk_ptype_exist, data_list = load_data('Coordinates', [2,4], sdir, snum,
+                                          find_center=True)
+        density_grid_len = 0.02
+        ## To deal with boundary (R==size) grid, include more than specified size
+        density_grid_num = 2*round(size/density_grid_len)+2
+        density = kernel_density_estimation_2D(sdir, snum, disk_ptype_exist, size+density_grid_len,
+                                               (0,1), density_grid_num, resolution=5, opt=False)
+        ## Resolution is chosen to make the result similar to the reference,
+        ## arXiv:1901.02021
 
-    R_index = 0
-    fft_theta = -1  ## Just initialization
-    for i in range(R_grid_num):
+        ## Construct FFT results matrix
+        mode_min, mode_max= 1, 5  ## Maximum and minimum mode of FFT
+        FFT_results = np.zeros((len(R_grid), mode_max-mode_min+1))
+        for i in range(len(R_grid)):
+            if i == 0:
+                continue
+            R = R_grid[i]
+            density_each_R = np.zeros_like(theta_grid)
+            for j in range(len(theta_grid)):
+                theta = theta_grid[j]
+                ## Assign index to find neighbors
+                x, y = R*np.cos(theta), R*np.sin(theta)
+                x_index = (x+size)/density_grid_len
+                y_index = (y+size)/density_grid_len
+                ## Bilinear interpolation from neighboring grids
+                x_down, y_down = int(x_index), int(y_index)
+                x_up, y_up = x_down+1, y_down+1
+                x_temp = np.array([x_up-x_index, x_index-x_down])
+                y_temp = np.array([y_up-y_index, y_index-y_down])
+                neighbors_temp = np.array([[density[x_down, y_down], density[x_down, y_up]],
+                                           [density[x_up  , y_down], density[x_up  , y_up]]])
+                density_each_R[j] = np.dot(np.dot(x_temp, neighbors_temp), y_temp)/R_grid_len**2
+            FFT_each_R = np.fft.fft(density_each_R)
+            FFT_each_R /= FFT_each_R[0]
+            FFT_results[i] = abs(FFT_each_R[mode_min: mode_max+1])
 
-        ## Find particles in R_grid
-        R_index_min = R_index
-        while cyl[R_index, 0] < R_grid[i+1]: R_index += 1
-        R_grid_data = cyl[R_index_min:R_index]
+        ## Plot the results
+        mode_domain = np.arange(mode_min, mode_max+1, 1, dtype=int)
+        for mode in mode_domain:
+            plt.plot(R_grid, abs(FFT_results[:,mode-mode_min]), label="m=%i" %mode)
+        time = snum*0.01
+        plt.title("t=%.2f Gyr azimuthal mode analysis" %time)
+        plt.xlabel("R (kpc)")
+        plt.ylabel("a_m/a_0")
+        plt.legend()
+        plt.show()
 
-        ## Find particles in theta_grid
-        R_grid_data = R_grid_data[R_grid_data[:,1].argsort()]
-        particle_num_theta_grid = np.zeros_like(theta_grid_point)
-        theta_index = 0
-        theta_index_max = len(R_grid_data)
-        for i in range(len(particle_num_theta_grid)):
-            theta_index_previous = theta_index
-            while theta_index < theta_index_max and R_grid_data[theta_index, 1] < theta_grid[i+1]:
-                theta_index += 1
-            particle_num_theta_grid[i] = theta_index - theta_index_previous
-
-        ## Conduct FFT
-        fft_theta_each_R = np.fft.fft(particle_num_theta_grid)
-        normalized_fft_theta_each_R = fft_theta_each_R/fft_theta_each_R[0]
-        if type(fft_theta) == int: fft_theta = normalized_fft_theta_each_R
-        else: fft_theta = np.vstack((fft_theta, normalized_fft_theta_each_R))
+    ## This one is much faster, but inaccurate since it does not use kernel
+###########################################################################
+# It seems like useless (too inacurrate). It is highly probable to delete #
+# this code in the near future.                                           #
+###########################################################################    
+    else:
+        ## Load the locations of the particles
+        ptype_list, data_list = load_data('Coordinates', [2,4], sdir, snum,
+                                          find_center=True)
     
-    ## Artificially add center (R=0), with FFT value 0s
-    R_grid_point = np.append(0, R_grid_point)
-    fft_at_center = np.zeros((1, len(theta_grid_point)))
-    fft_theta = np.vstack((fft_at_center, fft_theta))
-
-    ## Plot FFT coefficient of each mode vs. R axis
-    mode_max = 5
-    mode_domain = np.arange(1, mode_max+1, 1)
-    for mode in mode_domain:
-        plt.plot(R_grid_point, abs(fft_theta[:,mode]), label="m=%i" %mode)
-    time = snum*0.01
-    plt.title("t=%.2f Gyr azimuthal mode analysis" %time)
-    plt.xlabel("R (kpc)")
-    plt.ylabel("a_m/a_0")
-    plt.legend()
-    plt.show()
+        ## Compute R for each particle
+        data = data_list[0]
+        if len(data_list) > 1:  ## For no-star formation case
+            data = np.vstack((data_list[0], data_list[1]))
+        R = (data[:,0]**2 + data[:,1]**2)**(1/2)
+        theta = np.arccos(data[:,0]/R)
+        cyl = np.vstack((R, theta))
+        cyl = cyl.T
+        cyl = cyl[cyl[:,0].argsort()]  # Sort by R
+        particle_num = len(cyl)
+    
+        ## Generate R grid and theta grid at each R
+        particle_cutoff = int(particle_num*0.5)  ## Exclude outliers
+        R_grid_num = 50
+        R_max = cyl[particle_cutoff, 0]
+        R_grid = np.linspace(0, R_max, R_grid_num+1, endpoint=True)
+        R_grid_len = R_max/R_grid_num
+        R_grid_point = R_grid[:-1] + R_grid_len/2
+        theta_grid_num = 50  ## Beyond 30, the result is almost stable
+        theta_grid = np.linspace(0, 2*np.pi, theta_grid_num, endpoint=False)
+        theta_grid_len = 2*np.pi/theta_grid_num
+        theta_grid_point = theta_grid + theta_grid_len/2
+    
+        R_index = 0
+        fft_theta = -1  ## Just initialization
+        for i in range(R_grid_num):
+    
+            ## Find particles in R_grid
+            R_index_min = R_index
+            while cyl[R_index, 0] < R_grid[i+1]: R_index += 1
+            R_grid_data = cyl[R_index_min:R_index]
+    
+            ## Find particles in theta_grid
+            R_grid_data = R_grid_data[R_grid_data[:,1].argsort()]
+            particle_num_theta_grid = np.zeros_like(theta_grid_point)
+            theta_index = 0
+            theta_index_max = len(R_grid_data)
+            for i in range(len(particle_num_theta_grid)):
+                theta_index_previous = theta_index
+                while (theta_index < theta_index_max
+                       and R_grid_data[theta_index, 1] < theta_grid[i+1]):
+                    theta_index += 1
+                particle_num_theta_grid[i] = theta_index - theta_index_previous
+    
+            ## Conduct FFT
+            fft_theta_each_R = np.fft.fft(particle_num_theta_grid)
+            normalized_fft_theta_each_R = fft_theta_each_R/fft_theta_each_R[0]
+            if type(fft_theta) == int: fft_theta = normalized_fft_theta_each_R
+            else: fft_theta = np.vstack((fft_theta, normalized_fft_theta_each_R))
+        
+        ## Artificially add center (R=0), with FFT value 0s
+        R_grid_point = np.append(0, R_grid_point)
+        fft_at_center = np.zeros((1, len(theta_grid_point)))
+        fft_theta = np.vstack((fft_at_center, fft_theta))
+    
+        ## Plot FFT coefficient of each mode vs. R axis
+        mode_max = 5
+        mode_domain = np.arange(1, mode_max+1, 1)
+        for mode in mode_domain:
+            plt.plot(R_grid_point, abs(fft_theta[:,mode]), label="m=%i" %mode)
+        time = snum*0.01
+        plt.title("t=%.2f Gyr azimuthal mode analysis" %time)
+        plt.xlabel("R (kpc)")
+        plt.ylabel("a_m/a_0")
+        plt.legend()
+        plt.show()
 
     return None
 
@@ -1354,7 +1455,7 @@ def measure_mass_within_radius_2D(sdir, snum, radius, axis, ptype_list=[0,1,2,3,
 
     ## Load the locations of the particles
     value = 'Coordinates'
-    ptype_list, data_list = load_data(value, sdir, snum, ptype_list)
+    ptype_list, data_list = load_data(value, ptype_list, sdir, snum)
 
     mass_each_ptype = np.zeros_like(ptype_list)
     for data in data_list:
@@ -1404,37 +1505,47 @@ def plot_mass_vs_radius_2D(sdir, snum, radius, axes=[(0,1),(0,2),(1,2)],
 ## Select model
 sdir = "/home/du/gizmo/GasMaker/Model_Bar1/equilibrium_test"
 #sdir = "/home/du/gizmo/TestGas/Model_Bar1/Basic/results"
-snum = 3
+snum = 100
+ptype_list = [0]
+size = 20.
+plane = (0,2)
 
 ## Plot the locations of the particles
-#plot_particles(sdir, snum, ptype_list=[0], sizes=[10], axes=(0,1), save=True)
+#plot_particles(sdir, snum, ptype_list, size, plane, trackID=0, save=False)
 
 ## Plot the density contours
 #a = time.time()
-#density = plot_density_contour(sdir, snum, ptype_list=[0], sizes=[20], axes=(0,2), save=False, opt=False)
+#plot_density_contour(sdir, snum, ptype_list, size, plane,
+#                     grid_num=400, save=False, opt=False)
 #print(time.time()-a)
 
 ## Fit the luminosity curve to Sersic profile
-#sersic_fitting(sdir, snum, axes=(0,1))
+#sersic_fitting(sdir, snum, plane)
 
 ## Conduct Fourier analysis of the density of the disk to investigate bar and spiral structures
 #snum_list = np.arange(80, 90, 1)
 #for snum in snum_list:
-#    azimuthal_structure(sdir, snum)     
+#    azimuthal_structure(sdir, snum, 6., kernel=True)
+#    plot_particles(sdir, snum, ptype_list, size, plane, trackID=0, save=False)
 
 ## Investigate SFR
 #max_snum = 100
 #measure_SFR(sdir, max_snum)
 
+#track_IDs = np.arange(201000, 201100,1)
+#for temp in track_IDs:
+#    plot_particles(sdir, snum, sizes=2, axes=[(0,2)], ptype_list=[0], trackID=temp, save=False)
+
 ## Plot the evolution consequnce of the galaxy
-snum_list = np.arange(0,4,1)
+snum_list = np.arange(0,21,1)
 for snum in snum_list:
-    plot_particles(sdir, snum, sizes=10, axes=[(0,1)], ptype_list=[0], trackID=0, save=False)
-#    plot_density_contour(sdir, snum, sizes=[10], axes=(0,1), ptype_list=[0], save=False, opt=False)
+    plot_particles(sdir, snum, ptype_list, size, plane, trackID=0, find_center=False, save=False)
+#    plot_density_contour(sdir, snum, ptype_list, size, plane,
+#                         grid_num=400, save=False, opt=False)
 
 ## Compare rotatoin curve of disk particles and gas particls
-#dummy, loc = load_data('Coordinates', sdir, snum, [0,2])
-#dummy, vel = load_data('Velocities', sdir, snum, [0,2])
+#dummy, loc = load_data('Coordinates', [0,2], sdir, snum)
+#dummy, vel = load_data('Velocities', [0,2], sdir, snum)
 #R0 = np.sqrt(loc[0][:,0]**2+loc[0][:,1]**2)
 #R1 = np.sqrt(loc[1][:,0]**2+loc[1][:,1]**2)
 #v0 = np.sqrt(vel[0][:,0]**2+vel[0][:,1]**2)
