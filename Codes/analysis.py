@@ -663,11 +663,11 @@ def kernel_density_estimation_2D(sdir, snum, ptype_list, size, plane, grid_num,
         ptype, data = ptype_exist[i], data_list[i]
         if debug: print("ptype%d" %ptype)
         ## Compute bandwidth
-        if ptype == 4 and len(data) < 100:
+        if ptype == 4 and len(data) < 1000:
             ## Sometimes SFR is so low, so number of ptype4 can be
             ## very small. In this case, use gas data together.
-            gas_data = data_list[np.where(np.array(ptype_exist)==0)][0]
-            gas_data = np.vstack((gas_data, data))
+            dummy, gas_data = load_data('Coordinates', 0, sdir, snum)
+            gas_data = np.vstack((gas_data[0], data))
             sigma = np.std(gas_data[:,[x_axis,y_axis]], axis=0)
             h = sigma*len(gas_data)**(-1/6)  ## Silverman's rule in 2D
         else:
@@ -726,7 +726,7 @@ def kernel_density_estimation_2D(sdir, snum, ptype_list, size, plane, grid_num,
         kernel[origin_x+1:, :origin_y] = np.flip(kernel_quarter[1:,1:], 1)
         kernel[:origin_x, origin_y+1:] = np.flip(kernel_quarter[1:,1:], 0)
         kernel /= np.sum(kernel)  ## Normalization for conservation
-        kernel *= masses[ptype]/grid_len**2  ## Assign density
+        kernel *= masses[i]/grid_len**2  ## Assign density
         time_measure2 = time.time()
         if debug:
             print("Kernel matrix shape:", np.shape(kernel))
@@ -842,7 +842,7 @@ def plot_particles(sdir, snum, ptype_list, size, plane, trackID=0, find_center=T
     ## To prevent overwritten of one data points over other data points
     ## during plot, I plot only a fraction of data at once
     markers = ['c.', 'k.', 'r.', 'b.', 'm.', 'ko']
-    markers_size = 20/size
+    markers_size = 2/size
     if markers_size < 0.1:
         markers_size = 0.1
     ## Increase n to avoid overwrapping of plotted particles
@@ -1010,7 +1010,7 @@ def sersic_profile(r, I_e, R_e, n):
     return np.log10(I_e*np.exp(-(2*n-1/3)*((r/R_e)**(1/n)-1)))
 
 
-def sersic_fitting(sdir, snum, plane):
+def sersic_fitting(sdir, snum, plane, kernel=True):
     """This subrutine fits the distribution of stars to Sersic profile, and
     find out proper value of n (Sersic index) and R_e (effective radius) of
     galactic components (specified by ptype_list). Assume that the intensity
@@ -1029,6 +1029,10 @@ def sersic_fitting(sdir, snum, plane):
         1 (for y-axis) or 2 (for z-axis). For example, if you want to choose
         xy-plane, then pass (0,1).
 
+    Optionals:
+      kernel (boolean): Choose whether use kernel density estimation or not.
+        Using kernel density estimation is more accurate, but slower.
+
     Returns: Nothing
     """
     
@@ -1036,26 +1040,193 @@ def sersic_fitting(sdir, snum, plane):
         ## Set grid for fitting
         ptype_exist, data_list = load_data('Coordinates', [1,2,3,4], sdir, snum)
         
-
+        ## Sersic fitting for halo and bulge components
         ptype_name = ["Halo", "Bulge"]
         for i in range(len(ptype_name)):
             ptype = 2*i+1
             ## Continue to next ptype if ptype does not exist
             if ptype not in ptype_exist:
                 break
+            ptype_index = np.where(np.array(ptype_exist) == ptype)[0][0]
+            data = data_list[ptype_index]
+            
+            ## Construct R_grid 
+            x_axis, y_axis = plane
+            R = (data[:,x_axis]**2 + data[:,y_axis]**2)**(1/2)
+            R = np.sort(R)
+            R_len = len(R)
+            particle_cutoff = int(R_len*0.95)
+            R_max = R[particle_cutoff] 
+            R_domain = np.linspace(0, R_max, 101, endpoint=True)
+
+            ## Effective radius can be computed directly by sorting R
+            R_e = (R[R_len//2-1]+R[R_len//2])/2 if R_len%2 else R[R_len//2]
+
             density_grid_len = 0.02
             ## To deal with boundary (R==size) grid, include more than specified size
             density_grid_num = 2*round(size/density_grid_len)+2
-            density = kernel_density_estimation_2D(sdir, snum, ptype, size,
+            density = kernel_density_estimation_2D(sdir, snum, ptype, R_max,
                                                    (0,1), density_grid_num, resolution=5, opt=False)
-            x = np.outer(np.arange(-size+density_grid_len/2, size, density_grid_len, dtype=float),
+            x = np.outer(np.arange(-size+density_grid_len/2, R_max, density_grid_len, dtype=float),
                      np.ones(len(density), dtype=float))
             y = np.outer(np.ones(len(density[0]), dtype=float),
-                     np.arange(-size+density_grid_len/2, size, density_grid_len, dtype=float))
+                     np.arange(-size+density_grid_len/2, R_max, density_grid_len, dtype=float))
             distance = (x**2+y**2)**(1/2)
             ## Flatten and sort by the distance from the origin
             ind = np.argsort(distance.flatten())
             density = np.take_along_axis(density.flatten(), ind, axis=0)
+            x = np.take_along_axis(x.flatten(), ind, axis=0)
+            y = np.take_along_axis(y.flatten(), ind, axis=0)
+            
+            ## Construct luminosity
+            luminosity = np.zeros_like(R_domain, dtype=float)
+            for j in range(len(luminosity)-1):
+                for k in range(len(density)):
+                    if distance[k]+density_grid_len*2**(1/2) < R_domain[j+1]:
+                        luminosity[i+1] += density[k]
+                    ## When only fraction of grid is included in circle of R
+                    ## Approximate non-overlap region as a triangle
+                    elif distance[k] < R_domain[j+1]:
+                        x_intersect = (R_domain[j+1]**2-(abs(y[k])-density_grid_len/2)**2)**(1/2)
+                        y_intersect = (R_domain[j+1]**2-(abs(x[k])-density_grid_len/2)**2)**(1/2)
+                        overlap_x_len = density_grid_len/2-abs(x[k])+x_intersect
+                        overlap_y_len = density_grid_len/2-abs(y[k])+y_intersect
+                        not_overlap_frac = overlap_x_len*overlap_y_len/2/density_grid_len**2
+                        luminosity[i+1] += density[k]*(1-not_overlap_frac)
+                    ## Simliar to above, but this time approximate overlap region
+                    elif distance[k]-density_grid_len*2**(1/2) < R_domain[j+1]:
+                        x_intersect = (R_domain[j+1]**2-(abs(y[k])-density_grid_len/2)**2)**(1/2)
+                        y_intersect = (R_domain[j+1]**2-(abs(x[k])-density_grid_len/2)**2)**(1/2)
+                        overlap_x_len = density_grid_len/2-abs(x[k])+x_intersect
+                        overlap_y_len = density_grid_len/2-abs(y[k])+y_intersect
+                        overlap_frac = overlap_x_len*overlap_y_len/2/density_grid_len**2
+                        luminosity[i+1] += density[k]*overlap_frac
+                    ## Since distance is sorted, once this distance is reached
+                    ## there are no remaining grid that should be included
+                    else:
+                        break
+
+            ## Compute I_e, luminosity at effective radius
+            for j in range(len(R_domain)):
+                if not R_e > R_domain[j]:
+                    R_e_index = j
+                    break
+            I_e = luminosity[R_e_index]
+        
+            ## Find best 'n' value by using least square method
+            initial_guess = [I_e, R_e, 4]
+            popt, pcov = curve_fit(sersic_profile, R_domain[1:], np.log10(luminosity[1:]),
+                                   p0=initial_guess, bounds=([I_e*0.98,R_e*0.98,0.1],[I_e*1.02,R_e*1.02,20]))
+            ## Exclude the first element, since it incorporate large error
+            print("%s - Effective radius: %.3f kpc, Sersic index: %.2f" % (ptype_name[i], popt[1], popt[2]))
+        
+            ## To find best fit in non-log scale, uncomment below line
+            #popt, pcov = curve_fit(sersic_profile, r_domain[1:], luminosity[1:], p0=initial_guess, bounds=([1,R_e*0.99,0.1],[np.inf,R_e*1.01,20]))
+            plt.plot(R_domain[1:], luminosity[1:], 'b-', label='Luminosity')
+            plt.plot(R_domain[1:], 10**sersic_profile(R_domain[1:], *popt), 'r-', label='Sersic fit')
+            plt.yscale('log')
+            plt.xlabel('R (kpc)')
+            plt.ylabel('Luminosity')
+            plt.title("%s Sersic profile fitting" % ptype_name[i])
+            plt.legend()
+            plt.show()
+        
+        ## Sersic fitting for disk components
+        ## Load disk particle data and merge them, if exists
+        disk_ptypes = [2,4]
+        data = np.array([-1,-1,-1])  ## Just initialization, will be removed
+        for ptype in disk_ptypes:
+            if ptype in ptype_exist:
+                ptype_index = np.where(np.array(ptype_exist)==ptype)[0][0]
+                data_one_ptype = data_list[ptype_index]
+                data = np.vstack((data, data_one_ptype))  
+            else:
+                disk_ptypes.remove(ptype)
+        data = np.delete(data, 0, axis=0)
+        if len(disk_ptypes) < 1:  ## Terminate when no disk particle exists
+            return None
+
+        ## Construct R_grid 
+        x_axis, y_axis = plane
+        R = (data[:,x_axis]**2 + data[:,y_axis]**2)**(1/2)
+        R = np.sort(R)
+        R_len = len(R)
+        particle_cutoff = int(R_len*0.95)
+        R_max = R[particle_cutoff] 
+        R_domain = np.linspace(0, R_max, 101, endpoint=True)
+
+        ## Effective radius can be computed directly by sorting R
+        R_e = (R[R_len//2-1]+R[R_len//2])/2 if R_len%2 else R[R_len//2]
+
+        density_grid_len = 0.02
+        ## To deal with boundary (R==size) grid, include more than specified size
+        density_grid_num = 2*round(size/density_grid_len)+2
+        density = kernel_density_estimation_2D(sdir, snum, disk_ptypes, R_max,
+                                               (0,1), density_grid_num, resolution=5, opt=False)
+        x = np.outer(np.arange(-size+density_grid_len/2, R_max, density_grid_len, dtype=float),
+                 np.ones(len(density), dtype=float))
+        y = np.outer(np.ones(len(density[0]), dtype=float),
+                 np.arange(-size+density_grid_len/2, R_max, density_grid_len, dtype=float))
+        distance = (x**2+y**2)**(1/2)
+        ## Flatten and sort by the distance from the origin
+        ind = np.argsort(distance.flatten())
+        density = np.take_along_axis(density.flatten(), ind, axis=0)
+        x = np.take_along_axis(x.flatten(), ind, axis=0)
+        y = np.take_along_axis(y.flatten(), ind, axis=0)
+        
+        ## Construct luminosity
+        luminosity = np.zeros_like(R_domain, dtype=float)
+        for j in range(len(luminosity)-1):
+            for k in range(len(density)):
+                if distance[k]+density_grid_len*2**(1/2) < R_domain[j+1]:
+                    luminosity[i+1] += density[k]
+                ## When only fraction of grid is included in circle of R
+                ## Approximate non-overlap region as a triangle
+                elif distance[k] < R_domain[j+1]:
+                    x_intersect = (R_domain[j+1]**2-(abs(y[k])-density_grid_len/2)**2)**(1/2)
+                    y_intersect = (R_domain[j+1]**2-(abs(x[k])-density_grid_len/2)**2)**(1/2)
+                    overlap_x_len = density_grid_len/2-abs(x[k])+x_intersect
+                    overlap_y_len = density_grid_len/2-abs(y[k])+y_intersect
+                    not_overlap_frac = overlap_x_len*overlap_y_len/2/density_grid_len**2
+                    luminosity[i+1] += density[k]*(1-not_overlap_frac)
+                ## Simliar to above, but this time approximate overlap region
+                elif distance[k]-density_grid_len*2**(1/2) < R_domain[j+1]:
+                    x_intersect = (R_domain[j+1]**2-(abs(y[k])-density_grid_len/2)**2)**(1/2)
+                    y_intersect = (R_domain[j+1]**2-(abs(x[k])-density_grid_len/2)**2)**(1/2)
+                    overlap_x_len = density_grid_len/2-abs(x[k])+x_intersect
+                    overlap_y_len = density_grid_len/2-abs(y[k])+y_intersect
+                    overlap_frac = overlap_x_len*overlap_y_len/2/density_grid_len**2
+                    luminosity[i+1] += density[k]*overlap_frac
+                ## Since distance is sorted, once this distance is reached
+                ## there are no remaining grid that should be included
+                else:
+                    break
+
+        ## Compute I_e, luminosity at effective radius
+        for j in range(len(R_domain)):
+            if not R_e > R_domain[j]:
+                R_e_index = j
+                break
+        I_e = luminosity[R_e_index]
+    
+        ## Find best 'n' value by using least square method
+        initial_guess = [I_e, R_e, 4]
+        popt, pcov = curve_fit(sersic_profile, R_domain[1:], np.log10(luminosity[1:]),
+                               p0=initial_guess, bounds=([I_e*0.98,R_e*0.98,0.1],[I_e*1.02,R_e*1.02,20]))
+        ## Exclude the first element, since it incorporate large error
+        print("%s - Effective radius: %.3f kpc, Sersic index: %.2f" % (ptype_name[i], popt[1], popt[2]))
+    
+        ## To find best fit in non-log scale, uncomment below line
+        #popt, pcov = curve_fit(sersic_profile, r_domain[1:], luminosity[1:], p0=initial_guess, bounds=([1,R_e*0.99,0.1],[np.inf,R_e*1.01,20]))
+        plt.plot(R_domain[1:], luminosity[1:], 'b-', label='Luminosity')
+        plt.plot(R_domain[1:], 10**sersic_profile(R_domain[1:], *popt), 'r-', label='Sersic fit')
+        plt.yscale('log')
+        plt.xlabel('R (kpc)')
+        plt.ylabel('Luminosity')
+        plt.title("%s Sersic profile fitting" % ptype_name[i])
+        plt.legend()
+        plt.show()
+        
     else:
         ## Load the locations and masses of the particles
         ptype_exist, data_list = load_data('Coordinates', [1,2,3,4], sdir, snum)
@@ -1503,12 +1674,12 @@ def plot_mass_vs_radius_2D(sdir, snum, radius, axes=[(0,1),(0,2),(1,2)],
                   specify the plane by pairing axis like (0,2), in case of yz-plane.")
 
 ## Select model
-sdir = "/home/du/gizmo/GasMaker/Model_Bar1/equilibrium_test"
-#sdir = "/home/du/gizmo/TestGas/Model_Bar1/Basic/results"
+#sdir = "/home/du/gizmo/GasMaker/Model_Bar1/equilibrium_test"
+sdir = "/home/du/gizmo/TestGas/Model_Bar1/CoolingLowT/results"
 snum = 100
-ptype_list = [0]
-size = 20.
-plane = (0,2)
+ptype_list = [2,0,4]
+size = 10.
+plane = (0,1)
 
 ## Plot the locations of the particles
 #plot_particles(sdir, snum, ptype_list, size, plane, trackID=0, save=False)
@@ -1523,10 +1694,10 @@ plane = (0,2)
 #sersic_fitting(sdir, snum, plane)
 
 ## Conduct Fourier analysis of the density of the disk to investigate bar and spiral structures
-#snum_list = np.arange(80, 90, 1)
-#for snum in snum_list:
-#    azimuthal_structure(sdir, snum, 6., kernel=True)
+snum_list = np.arange(0, 101,1)
+for snum in snum_list:
 #    plot_particles(sdir, snum, ptype_list, size, plane, trackID=0, save=False)
+    azimuthal_structure(sdir, snum, 6., kernel=True)
 
 ## Investigate SFR
 #max_snum = 100
@@ -1537,9 +1708,9 @@ plane = (0,2)
 #    plot_particles(sdir, snum, sizes=2, axes=[(0,2)], ptype_list=[0], trackID=temp, save=False)
 
 ## Plot the evolution consequnce of the galaxy
-snum_list = np.arange(0,21,1)
-for snum in snum_list:
-    plot_particles(sdir, snum, ptype_list, size, plane, trackID=0, find_center=False, save=False)
+#snum_list = np.arange(0,21,1)
+#for snum in snum_list:
+#    plot_particles(sdir, snum, ptype_list, size, plane, trackID=0, find_center=False, save=False)
 #    plot_density_contour(sdir, snum, ptype_list, size, plane,
 #                         grid_num=400, save=False, opt=False)
 
