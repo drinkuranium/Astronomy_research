@@ -650,3 +650,12 @@ Sersic_fitting 역시 kernel_density_mation을 사용하도록 조정
   -> [Halo, bulge]와 disk에 대해 fitting하는 코드가 따로 짜임
   -> 이를 하나로 합치는 방안도 구상해야 할 듯
   -> 다만 disk의 경우 ptype2, 4를 합쳐야 하기 때문에 쉽지는 않을 듯
+
+---------------------------------2020. 03. 27----------------------------------
+
+바뀐 IC file로 GIZMO 테스트 결과 확인
+ - 초기에 가스 particle이 중심으로 모이는 이상 현상 발견
+  -> 이에 따라 극초기에 비정상적으로 높은 SFR
+  -> 그제 확인한 rotation curve가 R이 작을 때 0로 가는 현상 때문인 듯
+ - 또한 초기에 gas particle의 scale length가 다시 크게 줄어드는 것 확인
+  -> Velocity DF가 맞지 않기 때문인데, 왜 맞지 않는 것인지는 모르겠음
