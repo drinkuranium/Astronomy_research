@@ -659,3 +659,85 @@ Sersic_fitting 역시 kernel_density_mation을 사용하도록 조정
   -> 그제 확인한 rotation curve가 R이 작을 때 0로 가는 현상 때문인 듯
  - 또한 초기에 gas particle의 scale length가 다시 크게 줄어드는 것 확인
   -> Velocity DF가 맞지 않기 때문인데, 왜 맞지 않는 것인지는 모르겠음
+
+------------------------2020. 03. 28 ~ 2020. 03. 29 주말-----------------------
+
+'An Introduction to Modern Astrophysics' 공부
+ - Chap 25.1 ~ 25.3
+
+서우영 박사님과 질의응답
+ - Feedback의 중요성
+ - Adaptive gravitational softening은 블랙홀을 제외한 모든 particle에 적용
+ - 초기 은하 평형 맞추는 방법에 대한 토의
+ - Bulge의 bar evolution에 대한 효과 등등
+
+---------------------------------2020. 03. 30----------------------------------
+
+왜 Feedback model의 SFR이 비정상적으로 낮은지 확인
+ - GALSF_SFR_MOLECULAR_CRITERION 때문
+ - 모든 Feedback 모델에 위 flag를 같이 켰기 때문에 Feedback 효과로 착각
+ - 초기 온도가 10000K로, 모든 수소가 전리되어 molecule을 이룰 수 없음
+ - 그러나 위 flag는 일정 molecule fraction 이상이어야 Star formation 시작
+ - 따라서 온도가 많이 낮아지고서야 star formation이 시작된 것이었음
+
+GIZMO 업데이트
+ - 2020년 3월에 대규모 업데이트
+ - 데스크탑 및 노트북에 새로 다운받음
+
+Feedback Model 테스트
+ - No feedback, Subgrid, Thermal, Mechanical (explicity resolution) 돌림
+
+Adaptive gravitational softening 테스트
+ - 모든 particle에 적용하면 좋음
+ - 그러나 큰 효과가 없는데 시간만 너무 오래 소요될 수 있음
+ - 이를 테스트하는 모델 돌림
+
+GalIC로 우리은하에 해당하는 모델 형성
+ - ToomreQ를 조절해 warm, cold 두 모델 생성
+
+---------------------------------2020. 03. 31----------------------------------
+
+Feedback 모델 돌아가지 않은 것들 다시 돌림
+ - Explicity resolution의 경우 필요한 parameter missign
+ - Subgrid 모델은 GIZMO 자체에 오타가 있었움
+
+Adaptive gravitation softening 결과
+ - 0.3 Gyr 이후로 효과가 상당히 크게 나타남
+ - Adaptive의 경우 bar가 더 선명하고 강하며, 빠른 회전
+ - 그러나 시간 소모가 4~5배에 달함
+ - 조금 더 토의 후 신중하게 결정해야 할 듯
+
+우리은하 모델 GIZMO로 테스트 (No gas particle)
+
+---------------------------------2020. 04. 01----------------------------------
+
+크게 별다른 일을 하지 않음
+
+---------------------------------2020. 04. 02----------------------------------
+
+Feedback 모델 결과
+ - No feedback, Subgrid는 지난번과 같음
+ - Thermal의 경우 실제로 gas particle이 날아가는 것을 확인
+  -> 그러나 적당한 feedback인지는 조금 더 알아봐야 할 듯
+ - Mechanical의 경우 feedback이 너무 큼
+  -> Star formation이 거의 일어나지 않을 정도
+  -> Feedback 크기를 조절해야 할 듯
+
+우리은하 모델 결과
+ - Cold model이 Warm model에 비해서 bar 생성이 빠름
+ - Bar strength도 cold model이 더 강력함
+ - Warm model의 bar는 cold model에 비해 상당히 두껑무
+  -> 큰 V_r dispersion 때문인 듯
+
+초기 은하 평형 맞추는 코드 에러 확인
+ - 평형을 맞춘 IC 파일을 GIZMO로 진화시킬 때 T를 다시 assign했기 때문
+  -> 가스의 평형은 수직방향 중력과 압력의 평형
+  -> 그러나 T를 인위적으로 바꿈으로써 평형이 깨진 것
+  -> 다시 테스트하기 위해 T를 인위적으로 바꾸지 않고 중력으로 진화
+ - 시행착오 : 은하 평형 맞추는 코드에서도 인위적으로 T를 바꾸면 안됨
+  -> 위와 같은 이유로 오히려 평형에서 멀어질 수 있음
+  -> 이에 따라 나중에는 큰 가속도의 발생으로 timestep이 크게 작아짐
+ - 현재까지의 IC file은 ~3000K 정도의 gas particle을 만들어냈음
+  -> 분자량을 잘못 넣은 결과, 원래 의도는 10000K
+  -> 새로 고쳐서 평형 맞추기 위한 진화 시키는 중
+  -> 이전과 같이 R이 작을 때 rotation curve가 0으로 가는 오류가 있는지 확인할 예정

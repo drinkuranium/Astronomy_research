@@ -12,7 +12,10 @@ from load_from_snapshot import load_from_snapshot
 
 
 Y = 0.24  ## Helium fraction
-mu = (1-Y)*1 + Y*4  ## Mean molecular number
+
+## mu is extracted from GIZMO running test, to make T=10000K
+mu = 0.5889076650588833 ## Mean molecular number
+
 gamma = 5./3.  ## Heat capacity ratio
 m_p = 1.67e-27/1.9885e40  ## In code unit (1e10 solar mass)
 k = 1.38e-23/1.9885e40*(3.0857e16/3.0856e19)**2  ## In code unit (1e10 solar amss, kpc, Gyr)
@@ -254,7 +257,7 @@ def add_gas(sdir, snum, ngas, gas_frac, T_gas):
 
 
 def make_gas_equilibrium_short_evolution(sdir, model_name, core_num):
-    """This subroutine create a directory under /home/du/gizmo/GasMaker whose
+    """This subroutine create a directory under /home/du/GIZMO/AddGas whose
     name is given by the model name. Then it moves the output IC (HDF5) file
     of the add_gas function the created directory and also copies GIZMO into
     the directory. Finally, this subroutine evolves the galaxy by GIZMO for
@@ -278,9 +281,9 @@ def make_gas_equilibrium_short_evolution(sdir, model_name, core_num):
 
     ## Just like bash scripting!
     cwd = os.getcwd()
-    wd = '/home/du/gizmo/GasMaker/'+model_name
+    wd = '/home/du/GIZMO/AddGas/'+model_name
     os.system('rm -r '+wd)
-    os.system('cp -r -f /home/du/gizmo/GasMaker/gizmo-gasmaker '+wd)
+    os.system('cp -r -f /home/du/GIZMO/AddGas/GasMaker '+wd)
     os.system('cp '+sdir+'/gas_added.hdf5 '+wd+'/gas_added.hdf5')
     os.chdir(wd)
     os.system('mpiexec -np %d ./GIZMO short_evolution.params' %core_num)
@@ -291,7 +294,7 @@ def make_gas_equilibrium_short_evolution(sdir, model_name, core_num):
 
 
 def make_gas_equilibrium_evolve_gas_only(sdir, model_name, core_num, end_time):
-    """This subroutine create a directory under /home/du/gizmo/GasMaker whose
+    """This subroutine create a directory under /home/du/GIZMO/AddGas whose
     name is given by the model name. Then it moves the output IC (HDF5) file
     of the add_gas function the created directory and also copies GIZMO into
     the directory. Finally, this subroutine evolves the galaxy by GIZMO for
@@ -317,9 +320,9 @@ def make_gas_equilibrium_evolve_gas_only(sdir, model_name, core_num, end_time):
 
     ## Just like bash scripting!
     cwd = os.getcwd()
-    wd = '/home/du/gizmo/GasMaker/'+model_name
+    wd = '/home/du/GIZMO/AddGas/'+model_name
     os.system('rm -r '+wd)
-    os.system('cp -r -f /home/du/gizmo/GasMaker/gizmo-gasmaker '+wd)
+    os.system('cp -r -f /home/du/GIZMO/AddGas/GasMaker '+wd)
     os.system('cp '+sdir+'/gas_added.hdf5 '+wd+'/gas_added.hdf5')
     os.chdir(wd)
     os.system('rm -r equilibrium_test')
@@ -441,7 +444,7 @@ def check_gas_velocity_before_eq(sdir, model_name):
         plt.legend()
         plt.show()
         
-        ## v_z
+#        ## v_z
 #        v_gas_z = v_gas[:,2]
 #        v_disk_z = v_disk[:,2]
 #        plt.plot(loc_disk_R, v_disk_z, 'r.', label='Disk', markersize=1)
@@ -451,6 +454,8 @@ def check_gas_velocity_before_eq(sdir, model_name):
 #        plt.title('R vs v plot')
 #        plt.legend()
 #        plt.show()
+        
+        file.close()
 
     ## Plot gas velocity direction (only for small fraction of them)
     plt.figure(figsize=(10,10))
@@ -525,7 +530,7 @@ def check_equilibrium(model_name, sizes=[10.], axes=[(0,1),(0,2),(1,2)]):
                   specify the plane by pairing axis like (0,2), in case of yz-plane.")
             return None 
 
-    sdir = '/home/du/gizmo/GasMaker/'+model_name+'/results'
+    sdir = '/home/du/GIZMO/AddGas/'+model_name+'/results'
     loc_gas_t0 = load_from_snapshot('Coordinates', 0, sdir, 0)
     loc_gas_t5 = load_from_snapshot('Coordinates', 0, sdir, 5)
     loc_gas_t8 = load_from_snapshot('Coordinates', 0, sdir, 8)   
@@ -567,14 +572,15 @@ def compute_scale_height_and_length(sdir, snum):
 
 
 model_name = "Model_Bar1"
-sdir = "/home/du/gizmo/GasMaker/"+model_name+"/equilibrium_test"
+sdir = "/home/du/GIZMO/GalIC_Test/"+model_name  ## Where GalIC file is located
+#sdir = "/home/du/GIZMO/AddGas/Model_Bar1_Eq_Test/height0.5_evolve1"
 snum = 10
 ngas = 10000
 gas_frac = 0.1
 T_gas = 10000.
 
 ## Actually make gas particles
-#add_gas(sdir, snum, ngas, gas_frac, T_gas)
+add_gas(sdir, snum, ngas, gas_frac, T_gas)
 
 ## Evolve IC to reach equilibrium, choose one among 2 options
 ## Note that this is closely related to directory structure and paramter file.
@@ -583,11 +589,11 @@ T_gas = 10000.
 #core_num = 8
 #make_gas_equilibrium_short_evolution(sdir, model_name, core_num)
 
-#core_num, end_time = 8, 1
-#make_gas_equilibrium_evolve_gas_only(sdir, model_name, core_num, end_time)
+core_num, end_time = 12, 1
+make_gas_equilibrium_evolve_gas_only(sdir, model_name, core_num, end_time)
 
 ## For checking purpose
-check_gas_velocity_before_eq(sdir, model_name)
+#check_gas_velocity_before_eq(sdir, model_name)
 
 ## For checking purpose
 #check_equilibrium(model_name, sizes=[1.], axes=[(0,2)])

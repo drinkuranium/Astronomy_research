@@ -1579,15 +1579,16 @@ def measure_SFR(sdir, snum_max):
     fig, ax1 = plt.subplots()
     ax1.set_xlabel('Time (Gyr)')
     ax1.set_ylabel('Number of particles')
-    ax1.plot(t_list, num_ptype0_list, 'c-', label='ptype0')
-    ax1.plot(t_list, num_ptype4_list, 'm-', label='ptype4')
-    plt.legend()
+    lns1 = ax1.plot(t_list, num_ptype0_list, 'c-', label='ptype0')
+    lns2 = ax1.plot(t_list, num_ptype4_list, 'm-', label='ptype4')
     ax2 = ax1.twinx()
     ax2.set_ylabel('SFR (M_sun/yr)')
-    ax2.plot(t_list, SFR_list, 'r-', label='SFR')
+    lns3 = ax2.plot(t_list, SFR_list, 'r-', label='SFR')
+    lns = lns1+lns2+lns3
+    labs = [l.get_label() for l in lns]
+    ax1.legend(lns, labs)
     fig.tight_layout()
     plt.title('Snapshot number vs ptype0 and ptype4 number')
-    plt.legend()
     plt.show()
 
     return None
@@ -1673,13 +1674,63 @@ def plot_mass_vs_radius_2D(sdir, snum, radius, axes=[(0,1),(0,2),(1,2)],
             print("Please follow the format: [0, 1, 2] for [x, y, z] axis - then \
                   specify the plane by pairing axis like (0,2), in case of yz-plane.")
 
+
+def measure_minimum_distance(sdir, snum, ptype_list, size, num_dist):
+    
+    dummy, data_list = load_data('Coordinates', ptype_list, sdir, snum)
+    dummy, id_list = load_data('ParticleIDs', ptype_list, sdir, snum)
+    ## Extract particles only within cube of size
+    data_merged = np.zeros(3)
+    id_merged = np.zeros(1)
+    for i in range(len(data_list)):
+        data, ids = data_list[i], id_list[i]
+        data = data[np.where((abs(data[:,0]) < size)
+                             & (abs(data[:,1]) < size)
+                             & (abs(data[:,2]) < size))]
+        data_merged = np.vstack((data_merged, data))
+        ids = ids[np.where((abs(data[:,0]) < size)
+                            & (abs(data[:,1]) < size)
+                            & (abs(data[:,2]) < size))]
+        id_merged = np.append(id_merged, ids)
+    data_merged = np.delete(data_merged, 0, axis=0)
+    id_merged = np.delete(id_merged, 0, axis=0)
+    
+    min_dist_list = np.array([10000000])  ## Arbitrary large dummy number
+    min_dist_ids = np.zeros(2)
+    print(len(data_merged))
+    for i in range(len(data_merged)-1):
+
+        loc1, id1 = data_merged[i], id_merged[i]
+        j = i+1
+        while j < len(data_merged):
+            loc2, id2 = data_merged[j], id_merged[j]
+            dist = np.sum((loc1-loc2)**2)**(1/2)
+            if dist < min_dist_list[-1]:  ## Last element is the biggest since sorted
+                min_dist_list = np.append(min_dist_list, dist)
+                min_dist_ids = np.vstack((min_dist_ids, np.array([id1, id2])))
+                ind = np.argsort(min_dist_list)
+                min_dist_list = np.take_along_axis(min_dist_list, ind, axis=0)
+                min_dist_ids[:,0] = np.take_along_axis(min_dist_ids[:,0], ind, axis=0)
+                min_dist_ids[:,1] = np.take_along_axis(min_dist_ids[:,1], ind, axis=0)
+                
+                if len(min_dist_list) > num_dist:
+                    min_dist_list = np.delete(min_dist_list, -1, axis=0)
+                    min_dist_ids = np.delete(min_dist_ids, -1, axis=0)
+            j += 1
+    
+    return min_dist_list, min_dist_ids
+            
+
 ## Select model
-#sdir = "/home/du/gizmo/GasMaker/Model_Bar1/equilibrium_test"
-sdir = "/home/du/gizmo/TestGas/Model_Bar1/CoolingLowT/results"
-snum = 100
-ptype_list = [2,0,4]
-size = 10.
-plane = (0,1)
+sdir = "/home/du/GIZMO/AddGas/Model_Bar1/equilibrium_test"
+#sdir = "/home/du/GIZMO/GIZMO_Test/Before_Update/Model_Bar1/CoolingLowT/results"
+#sdir = "/home/du/GIZMO/GIZMO_Test/Before_Update/Model_Bar1_Feedback/Scale_2_Orientation_0/results"
+snum = 0
+ptype_list = [0]
+size = 1
+plane = (0,2)
+
+temp, ids = measure_minimum_distance(sdir, snum, ptype_list, size, 15)
 
 ## Plot the locations of the particles
 #plot_particles(sdir, snum, ptype_list, size, plane, trackID=0, save=False)
@@ -1694,13 +1745,13 @@ plane = (0,1)
 #sersic_fitting(sdir, snum, plane)
 
 ## Conduct Fourier analysis of the density of the disk to investigate bar and spiral structures
-snum_list = np.arange(0, 101,1)
-for snum in snum_list:
-#    plot_particles(sdir, snum, ptype_list, size, plane, trackID=0, save=False)
-    azimuthal_structure(sdir, snum, 6., kernel=True)
+#snum_list = np.arange(0, 101,1)
+#for snum in snum_list:
+#    plot_particles(sdir, snum, ptype_list, size, plane, trackID=0, find_center=False, save=False)
+#    azimuthal_structure(sdir, snum, 6., kernel=True)
 
 ## Investigate SFR
-#max_snum = 100
+#max_snum = 60
 #measure_SFR(sdir, max_snum)
 
 #track_IDs = np.arange(201000, 201100,1)
