@@ -440,8 +440,10 @@ def check_gas_velocity_before_eq(sdir, model_name):
         plt.plot(loc_gas_R, v_gas_R, 'b+', label='Gas', markersize=1)
         plt.xlabel('R (kpc)')
         plt.ylabel('v (km/s)')
-        plt.title('R vs v plot')
+        evolve_time = snum*0.05
+        plt.title('R vs v plot, evolve %.2f Gyr' % evolve_time)
         plt.legend()
+        plt.savefig(sdir+"/plot/rotation curve t=%.2f Gyr.png" % evolve_time)
         plt.show()
         
 #        ## v_z
@@ -572,15 +574,15 @@ def compute_scale_height_and_length(sdir, snum):
 
 
 model_name = "Model_Bar1"
-sdir = "/home/du/GIZMO/GalIC_Test/"+model_name  ## Where GalIC file is located
-#sdir = "/home/du/GIZMO/AddGas/Model_Bar1_Eq_Test/height0.5_evolve1"
+#sdir = "/home/du/GIZMO/GalIC_Test/"+model_name  ## Where GalIC file is located
+sdir = "/home/du/GIZMO/Meeting/height0.5_evolve1"
 snum = 10
 ngas = 10000
 gas_frac = 0.1
 T_gas = 10000.
 
 ## Actually make gas particles
-add_gas(sdir, snum, ngas, gas_frac, T_gas)
+#add_gas(sdir, snum, ngas, gas_frac, T_gas)
 
 ## Evolve IC to reach equilibrium, choose one among 2 options
 ## Note that this is closely related to directory structure and paramter file.
@@ -589,11 +591,11 @@ add_gas(sdir, snum, ngas, gas_frac, T_gas)
 #core_num = 8
 #make_gas_equilibrium_short_evolution(sdir, model_name, core_num)
 
-core_num, end_time = 12, 1
-make_gas_equilibrium_evolve_gas_only(sdir, model_name, core_num, end_time)
+core_num, end_time = 12, 0.9
+#make_gas_equilibrium_evolve_gas_only(sdir, model_name, core_num, end_time)
 
 ## For checking purpose
-#check_gas_velocity_before_eq(sdir, model_name)
+check_gas_velocity_before_eq(sdir, model_name)
 
 ## For checking purpose
 #check_equilibrium(model_name, sizes=[1.], axes=[(0,2)])

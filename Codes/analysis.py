@@ -421,8 +421,9 @@ def load_data(value, ptype_list, sdir, snum, find_center=True):
         value = 'Coordinates'
         ptype_list_temp = [0,2,3,4]
         ptype_exist_temp = []
-        for ptype in ptype_list_temp:
-            if ptype in ptype_exist:
+        num_particle = load_from_snapshot('NumPart_Total', 0, sdir, snum)
+        for ptype in np.arange(0, 6, 1, dtype=int)[np.where(num_particle>0)]:
+            if ptype in ptype_list_temp:
                 ptype_exist_temp.append(ptype)
         data_list_temp = np.zeros_like(ptype_exist_temp, dtype=object)
         for i in range(len(ptype_exist_temp)):
@@ -836,13 +837,15 @@ def plot_particles(sdir, snum, ptype_list, size, plane, trackID=0, find_center=T
     ptype_exist, data_list = load_data(value, ptype_list, sdir, snum, find_center=find_center)
 
     ## Plot the entire galaxy (including outermost halo particles)
+    plt.rc('font', size=15)
+
     plt.figure(figsize = (10,10))
     plt.axis('equal')
-
+   
     ## To prevent overwritten of one data points over other data points
     ## during plot, I plot only a fraction of data at once
     markers = ['c.', 'k.', 'r.', 'b.', 'm.', 'ko']
-    markers_size = 2/size
+    markers_size = 10/size
     if markers_size < 0.1:
         markers_size = 0.1
     ## Increase n to avoid overwrapping of plotted particles
@@ -860,7 +863,7 @@ def plot_particles(sdir, snum, ptype_list, size, plane, trackID=0, find_center=T
     x_label, y_label = axis_label[x_axis], axis_label[y_axis]
     plt.xlabel(x_label+" axis [kpc]")
     plt.ylabel(y_label+" axis [kpc]")
-    plt.title("t=%.2f Gyr, projected onto %s%s-plane galaxy" %(snum*0.01, x_label, y_label))
+    plt.title("t=%.2f Gyr, projected onto %s%s-plane, only gas particles" %(snum*0.01, x_label, y_label))
     plt.xlim((-size, size))
     plt.ylim((-size, size))
     ## Plot the origin
@@ -870,7 +873,7 @@ def plot_particles(sdir, snum, ptype_list, size, plane, trackID=0, find_center=T
     if trackID != 0:
         ## Find the particle
         dummy, ids = load_data('ParticleIDs', ptype_exist, sdir, snum)
-        dummy, locs = load_data('Coordinates', ptype_exist, sdir, snum)
+        dummy, locs = load_data('Coordinates', ptype_exist, sdir, snum, find_center=find_center)
         for ptype_index in range(len(ptype_exist)):
             part_index = np.where(ids[ptype_index]==trackID)
             if len(part_index[0]) >= 1:
@@ -899,6 +902,7 @@ def plot_particles(sdir, snum, ptype_list, size, plane, trackID=0, find_center=T
         plt.savefig(sdir+"/plot/galaxy_image/%s%s-plane/t=%.2f Gyr particle plot.png"
                     %(x_label, y_label, snum*0.01))
     plt.show()
+    plt.rc('font', size=10)
 
     return None
 
@@ -938,7 +942,7 @@ def plot_density_contour(sdir, snum, ptype_list, size, plane,
       save (boolean): Determine whether save the plot or not. Default is False.
         You can specify the saving directory. Default will be a sub-directory
         of the data directory, and if the directory does not exist,
-        then it will create the directory.grid_num=4
+        then it will create the directory.
 
       opt (boolean): Decide whether execute different algorithm or not. 
         This is faster when number density is high. Recommendeed for large
@@ -1546,7 +1550,7 @@ def azimuthal_structure(sdir, snum, size=6., kernel=True):
     return None
 
 
-def measure_SFR(sdir, snum_max):
+def measure_SFR(sdir, snum_max, save=False):
     """Measure the star formation rate (SFR) of the entire galaxy by plotting
     the number of gas and newly created star particles.
 
@@ -1555,6 +1559,12 @@ def measure_SFR(sdir, snum_max):
         snapshot sub-directory if it is a multi-part file
             
       snum_max (int): Maximum number of the snapshot.
+
+    Optionals:
+      save (boolean): Determine whether save the plot or not. Default is False.
+        You can specify the saving directory. Default will be a sub-directory
+        of the data directory, and if the directory does not exist,
+        then it will create the directory.grid_num=4
 
     Raises:
       If there are no disk particles, the entire program will be halted.
@@ -1579,16 +1589,25 @@ def measure_SFR(sdir, snum_max):
     fig, ax1 = plt.subplots()
     ax1.set_xlabel('Time (Gyr)')
     ax1.set_ylabel('Number of particles')
+    plt.ylim(0, 10000)
+    plt.xlim(0,1)
     lns1 = ax1.plot(t_list, num_ptype0_list, 'c-', label='ptype0')
     lns2 = ax1.plot(t_list, num_ptype4_list, 'm-', label='ptype4')
     ax2 = ax1.twinx()
     ax2.set_ylabel('SFR (M_sun/yr)')
     lns3 = ax2.plot(t_list, SFR_list, 'r-', label='SFR')
+    plt.ylim(0, 50)
     lns = lns1+lns2+lns3
     labs = [l.get_label() for l in lns]
     ax1.legend(lns, labs)
     fig.tight_layout()
-    plt.title('Snapshot number vs ptype0 and ptype4 number')
+    plt.title('Time vs ptype0, ptype4 number and SFR')
+    ## Save the figure if save flag is on
+    if save:
+        ## Create the directory if desniated directory does not exist
+        Path(sdir+"/plot").mkdir(parents=True, exist_ok=True)
+        plt.savefig(sdir+"/plot/SFR.png")
+        
     plt.show()
 
     return None
@@ -1684,14 +1703,14 @@ def measure_minimum_distance(sdir, snum, ptype_list, size, num_dist):
     id_merged = np.zeros(1)
     for i in range(len(data_list)):
         data, ids = data_list[i], id_list[i]
-        data = data[np.where((abs(data[:,0]) < size)
-                             & (abs(data[:,1]) < size)
-                             & (abs(data[:,2]) < size))]
-        data_merged = np.vstack((data_merged, data))
         ids = ids[np.where((abs(data[:,0]) < size)
                             & (abs(data[:,1]) < size)
                             & (abs(data[:,2]) < size))]
         id_merged = np.append(id_merged, ids)
+        data = data[np.where((abs(data[:,0]) < size)
+                             & (abs(data[:,1]) < size)
+                             & (abs(data[:,2]) < size))]
+        data_merged = np.vstack((data_merged, data))
     data_merged = np.delete(data_merged, 0, axis=0)
     id_merged = np.delete(id_merged, 0, axis=0)
     
@@ -1722,18 +1741,17 @@ def measure_minimum_distance(sdir, snum, ptype_list, size, num_dist):
             
 
 ## Select model
-sdir = "/home/du/GIZMO/AddGas/Model_Bar1/equilibrium_test"
+#sdir = "/home/du/GIZMO/AddGas/temp"
 #sdir = "/home/du/GIZMO/GIZMO_Test/Before_Update/Model_Bar1/CoolingLowT/results"
 #sdir = "/home/du/GIZMO/GIZMO_Test/Before_Update/Model_Bar1_Feedback/Scale_2_Orientation_0/results"
-snum = 0
+sdir = "/home/du/GIZMO/Meeting/OnlyGrav/results"
+snum = 100
 ptype_list = [0]
-size = 1
+size = 20
 plane = (0,2)
 
-temp, ids = measure_minimum_distance(sdir, snum, ptype_list, size, 15)
-
 ## Plot the locations of the particles
-#plot_particles(sdir, snum, ptype_list, size, plane, trackID=0, save=False)
+plot_particles(sdir, snum, ptype_list, size, plane, find_center=False, trackID=0, save=True)
 
 ## Plot the density contours
 #a = time.time()
@@ -1751,19 +1769,22 @@ temp, ids = measure_minimum_distance(sdir, snum, ptype_list, size, 15)
 #    azimuthal_structure(sdir, snum, 6., kernel=True)
 
 ## Investigate SFR
-#max_snum = 60
-#measure_SFR(sdir, max_snum)
+#max_snum = 100
+#measure_SFR(sdir, max_snum, save=True)
 
 #track_IDs = np.arange(201000, 201100,1)
 #for temp in track_IDs:
 #    plot_particles(sdir, snum, sizes=2, axes=[(0,2)], ptype_list=[0], trackID=temp, save=False)
 
 ## Plot the evolution consequnce of the galaxy
-#snum_list = np.arange(0,21,1)
+#snum_list = np.arange(0,101,1)
 #for snum in snum_list:
-#    plot_particles(sdir, snum, ptype_list, size, plane, trackID=0, find_center=False, save=False)
+#    plot_particles(sdir, snum, ptype_list, size, plane, trackID=0, find_center=False, save=True)
 #    plot_density_contour(sdir, snum, ptype_list, size, plane,
 #                         grid_num=400, save=False, opt=False)
+
+## Find the minimum distances between particles
+#temp, ids = measure_minimum_distance(sdir, snum, ptype_list, size, 15)
 
 ## Compare rotatoin curve of disk particles and gas particls
 #dummy, loc = load_data('Coordinates', [0,2], sdir, snum)
